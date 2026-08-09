@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mental Rotation — Allocentric Spatial Trainer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0d131a;
+    --grid-line: rgba(140,168,196,0.055);
+    --panel:#131c26;
+    --panel-2:#0f1720;
+    --hairline: rgba(148,177,204,0.16);
+    --hairline-strong: rgba(148,177,204,0.36);
+    --text:#e8edf3;
+    --text-dim:#7d8ea1;
+    --amber:#e3a33e;
+    --amber-dim: rgba(227,163,62,0.30);
+    --good:#4fae8c;
+    --good-dim: rgba(79,174,140,0.25);
+    --bad:#d9635c;
+    --bad-dim: rgba(217,99,92,0.28);
+    --radius:4px;
+    --mono:'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans:'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  }
+
+  *{ box-sizing:border-box; }
+
+  html,body{
+    margin:0;
+    min-height:100%;
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+  }
+
+  body{
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 34px 34px;
+  }
+
+  #app{
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 20px 22px 40px;
+    min-height: 100vh;
+    display:flex;
+    flex-direction:column;
+    gap: 18px;
+  }
+
+  /* ---------- Header ---------- */
+  header{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    flex-wrap:wrap;
+    gap:16px;
+    padding-bottom:16px;
+    border-bottom:1px solid var(--hairline);
+  }
+
+  .title-block h1{
+    margin:0;
+    font-family:var(--mono);
+    font-weight:700;
+    font-size: clamp(20px, 3vw, 26px);
+    letter-spacing:0.12em;
+  }
+
+  .title-block .subtitle{
+    margin:4px 0 0;
+    font-size:12.5px;
+    letter-spacing:0.08em;
+    color:var(--text-dim);
+    text-transform:uppercase;
+  }
+
+  .stat-row{
+    display:flex;
+    gap:0;
+    flex-wrap:wrap;
+  }
+
+  .stat{
+    padding: 2px 16px;
+    border-left:1px solid var(--hairline);
+    text-align:right;
+  }
+  .stat:first-child{ border-left:none; }
+
+  .stat .stat-label{
+    display:block;
+    font-size:10.5px;
+    letter-spacing:0.1em;
+    color:var(--text-dim);
+    text-transform:uppercase;
+  }
+  .stat .stat-value{
+    display:block;
+    font-family:var(--mono);
+    font-size:16px;
+    font-weight:600;
+    color:var(--amber);
+    margin-top:2px;
+  }
+
+  /* ---------- Instructions ---------- */
+  details.howto{
+    border:1px solid var(--hairline);
+    border-radius:var(--radius);
+    background: var(--panel);
+    padding: 2px 16px;
+  }
+  details.howto summary{
+    cursor:pointer;
+    padding:10px 0;
+    font-family:var(--mono);
+    font-size:11.5px;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    color:var(--text-dim);
+  }
+  details.howto summary:hover{ color:var(--amber); }
+  details.howto p{
+    margin:0 0 14px;
+    font-size:14px;
+    line-height:1.55;
+    color:var(--text-dim);
+    max-width:70ch;
+  }
+
+  /* ---------- Main stage ---------- */
+  main{
+    display:grid;
+    grid-template-columns: 1.15fr 1fr;
+    gap:18px;
+    align-items:stretch;
+  }
+
+  @media (max-width: 860px){
+    main{ grid-template-columns: 1fr; }
+  }
+
+  .panel{
+    position:relative;
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    border:1px solid var(--hairline);
+    border-radius:var(--radius);
+    overflow:hidden;
+  }
+
+  #target-panel{
+    aspect-ratio: 1 / 1;
+    min-height: 300px;
+  }
+
+  .bracket{ position:absolute; width:18px; height:18px; pointer-events:none; }
+  .bracket.tl{ top:10px; left:10px; border-top:2px solid var(--amber); border-left:2px solid var(--amber); }
+  .bracket.tr{ top:10px; right:10px; border-top:2px solid var(--amber); border-right:2px solid var(--amber); }
+  .bracket.bl{ bottom:10px; left:10px; border-bottom:2px solid var(--amber); border-left:2px solid var(--amber); }
+  .bracket.br{ bottom:10px; right:10px; border-bottom:2px solid var(--amber); border-right:2px solid var(--amber); }
+
+  .target-caption{
+    position:absolute;
+    left:14px; bottom:12px;
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--text-dim);
+  }
+
+  .readout{
+    position:absolute;
+    right:14px; top:12px;
+    font-family:var(--mono);
+    font-size:12px;
+    letter-spacing:0.03em;
+    color:var(--amber);
+    text-align:right;
+  }
+  .readout .readout-label{
+    display:block;
+    font-size:10px;
+    color:var(--text-dim);
+    letter-spacing:0.1em;
+    margin-bottom:2px;
+  }
+
+  canvas{ display:block; width:100%; height:100%; }
+
+  #target-canvas{ cursor:grab; touch-action:none; }
+  #target-canvas.dragging{ cursor:grabbing; }
+
+  .options-grid{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap:14px;
+  }
+
+  .option-panel{
+    aspect-ratio: 1 / 1;
+    min-height: 130px;
+    position:relative;
+    cursor:pointer;
+    transition: border-color .15s ease, background .15s ease, opacity .2s ease;
+  }
+  @media (prefers-reduced-motion: no-preference){
+    .option-panel{ transition: border-color .15s ease, background .15s ease, opacity .2s ease, transform .15s ease; }
+    .option-panel:hover:not(.correct):not(.incorrect){ transform: translateY(-2px); }
+  }
+  .option-panel:hover:not(.correct):not(.incorrect){ border-color: var(--amber-dim); }
+  .option-panel:focus-visible{ outline:2px solid var(--amber); outline-offset:2px; }
+
+  .option-tag{
+    position:absolute;
+    top:9px; left:10px;
+    z-index:2;
+    font-family:var(--mono);
+    font-size:11px;
+    font-weight:600;
+    letter-spacing:0.06em;
+    color:var(--text-dim);
+    background: rgba(13,19,26,0.55);
+    padding:2px 7px;
+    border:1px solid var(--hairline);
+    border-radius:2px;
+  }
+
+  .option-panel.correct{
+    border-color: var(--good);
+    background: linear-gradient(180deg, rgba(79,174,140,0.12), var(--panel-2));
+    box-shadow: 0 0 0 1px var(--good-dim) inset;
+  }
+  .option-panel.correct .option-tag{ color:var(--good); border-color: var(--good-dim); }
+
+  .option-panel.incorrect{
+    border-color: var(--bad);
+    background: linear-gradient(180deg, rgba(217,99,92,0.12), var(--panel-2));
+    box-shadow: 0 0 0 1px var(--bad-dim) inset;
+  }
+  .option-panel.incorrect .option-tag{ color:var(--bad); border-color: var(--bad-dim); }
+
+  .option-panel.reveal{
+    border-color: var(--good);
+    box-shadow: 0 0 0 1px var(--good-dim) inset;
+  }
+  .option-panel.reveal .option-tag{ color:var(--good); }
+
+  .option-panel.dim{ opacity:0.45; }
+
+  @media (prefers-reduced-motion: no-preference){
+    .option-panel.shake{ animation: shake .32s ease; }
+  }
+  @keyframes shake{
+    0%,100%{ transform:translateX(0); }
+    25%{ transform:translateX(-5px); }
+    75%{ transform:translateX(5px); }
+  }
+
+  /* ---------- Footer controls ---------- */
+  footer{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:14px;
+    padding-top:4px;
+  }
+
+  .diff-block{ display:flex; flex-direction:column; gap:6px; }
+  .diff-block .diff-label{
+    font-family:var(--mono);
+    font-size:10.5px;
+    letter-spacing:0.1em;
+    color:var(--text-dim);
+    text-transform:uppercase;
+  }
+  .diff-controls{ display:flex; border:1px solid var(--hairline); border-radius:var(--radius); overflow:hidden; }
+  .diff-btn{
+    font-family:var(--mono);
+    font-size:11.5px;
+    letter-spacing:0.06em;
+    color:var(--text-dim);
+    background:var(--panel);
+    border:none;
+    border-right:1px solid var(--hairline);
+    padding:8px 14px;
+    cursor:pointer;
+  }
+  .diff-btn:last-child{ border-right:none; }
+  .diff-btn:hover{ color:var(--text); }
+  .diff-btn.active{ background: var(--amber-dim); color:var(--amber); }
+  .diff-btn:focus-visible{ outline:2px solid var(--amber); outline-offset:-2px; }
+
+  .feedback{
+    flex:1;
+    min-width:220px;
+    text-align:center;
+    font-size:14px;
+    color:var(--text-dim);
+  }
+  .feedback.good{ color:var(--good); }
+  .feedback.bad{ color:var(--bad); }
+
+  #next-btn{
+    font-family:var(--mono);
+    font-size:12px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:#12181f;
+    background:var(--amber);
+    border:none;
+    border-radius:var(--radius);
+    padding:11px 20px;
+    cursor:pointer;
+  }
+  #next-btn:hover{ filter:brightness(1.08); }
+  #next-btn:focus-visible{ outline:2px solid var(--text); outline-offset:2px; }
+  #next-btn[hidden]{ display:none; }
+
+  .hint{
+    text-align:center;
+    font-size:11.5px;
+    color:var(--text-dim);
+    opacity:0.75;
+    margin: 2px 0 0;
+  }
+
+  #reset-link{
+    font-family:var(--mono);
+    font-size:10.5px;
+    letter-spacing:0.06em;
+    text-transform:uppercase;
+    color:var(--text-dim);
+    text-decoration:none;
+    border-bottom:1px dotted var(--hairline-strong);
+  }
+  #reset-link:hover{ color:var(--amber); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div class="title-block">
+      <h1>Mental Rotation</h1>
+      <p class="subtitle">Allocentric spatial training</p>
+    </div>
+    <div class="stat-row">
+      <div class="stat"><span class="stat-label">Trial</span><span class="stat-value" id="stat-trial">0</span></div>
+      <div class="stat"><span class="stat-label">Accuracy</span><span class="stat-value" id="stat-acc">—</span></div>
+      <div class="stat"><span class="stat-label">Streak</span><span class="stat-value" id="stat-streak">0</span></div>
+      <div class="stat"><span class="stat-label">Avg time</span><span class="stat-value" id="stat-avg">—</span></div>
+    </div>
+  </header>
+
+  <details class="howto">
+    <summary>How this works</summary>
+    <p>
+      Each round shows one target figure, built from unit blocks. Study it — drag it the way you'd turn an
+      object over in your hands, or walk around it in a room. Then look at the four candidates: exactly one
+      is the same figure seen from a different angle. The rest are mirror images or altogether different
+      figures. Pick the true rotation. Recognizing shape from any external point of view, not just your own,
+      is the allocentric skill this drill builds.
+    </p>
+  </details>
+
+  <main>
+    <div class="panel" id="target-panel">
+      <canvas id="target-canvas"></canvas>
+      <div class="bracket tl"></div>
+      <div class="bracket tr"></div>
+      <div class="bracket bl"></div>
+      <div class="bracket br"></div>
+      <div class="target-caption">Target — drag to inspect</div>
+      <div class="readout"><span class="readout-label">Orientation</span><span id="readout">Y 0° · X 0°</span></div>
+    </div>
+
+    <div class="options-grid">
+      <div class="panel option-panel" data-index="0" tabindex="0" role="button" aria-label="Option A">
+        <span class="option-tag">A</span>
+        <canvas></canvas>
+      </div>
+      <div class="panel option-panel" data-index="1" tabindex="0" role="button" aria-label="Option B">
+        <span class="option-tag">B</span>
+        <canvas></canvas>
+      </div>
+      <div class="panel option-panel" data-index="2" tabindex="0" role="button" aria-label="Option C">
+        <span class="option-tag">C</span>
+        <canvas></canvas>
+      </div>
+      <div class="panel option-panel" data-index="3" tabindex="0" role="button" aria-label="Option D">
+        <span class="option-tag">D</span>
+        <canvas></canvas>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div class="diff-block">
+      <span class="diff-label" id="cube-count-label">Complexity — 9 cubes</span>
+      <div class="diff-controls">
+        <button class="diff-btn" data-cubes="6">Easy</button>
+        <button class="diff-btn active" data-cubes="9">Medium</button>
+        <button class="diff-btn" data-cubes="12">Hard</button>
+      </div>
+    </div>
+
+    <div class="feedback" id="feedback">Study the target, then choose its match.</div>
+
+    <button id="next-btn" hidden>Next trial →</button>
+  </footer>
+
+  <p class="hint">Shapes are generated fresh each round — no two trials repeat. <a href="#" id="reset-link">Reset session</a></p>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  /* =========================================================
+     1. Rotation group of the cube (24 proper rotations)
+     Used to compare polycube shapes up to rotation, and to
+     verify a shape is chiral (its mirror is not just a rotation
+     of itself) before using it as a "mirror" distractor.
+  ========================================================= */
+
+  function matMul(a, b){
+    const r = [[0,0,0],[0,0,0],[0,0,0]];
+    for(let i=0;i<3;i++) for(let j=0;j<3;j++) for(let k=0;k<3;k++) r[i][j]+=a[i][k]*b[k][j];
+    return r;
+  }
+  function matKey(m){ return m.flat().join(','); }
+
+  const ROT_X = [[1,0,0],[0,0,-1],[0,1,0]];   // +90 deg about x
+  const ROT_Y = [[0,0,1],[0,1,0],[-1,0,0]];   // +90 deg about y
+  const IDENTITY = [[1,0,0],[0,1,0],[0,0,1]];
+
+  function buildRotationGroup(){
+    const seen = new Map();
+    seen.set(matKey(IDENTITY), IDENTITY);
+    let frontier = [IDENTITY];
+    while(frontier.length){
+      const next = [];
+      for(const m of frontier){
+        for(const gen of [ROT_X, ROT_Y]){
+          const nm = matMul(gen, m);
+          const key = matKey(nm);
+          if(!seen.has(key)){ seen.set(key, nm); next.push(nm); }
+        }
+      }
+      frontier = next;
+    }
+    return Array.from(seen.values());
+  }
+  const ROTATION_GROUP = buildRotationGroup(); // 24 matrices
+
+  function applyMat(m, p){
+    return [
+      m[0][0]*p[0]+m[0][1]*p[1]+m[0][2]*p[2],
+      m[1][0]*p[0]+m[1][1]*p[1]+m[1][2]*p[2],
+      m[2][0]*p[0]+m[2][1]*p[1]+m[2][2]*p[2],
+    ];
+  }
+
+  function canonicalForm(cells){
+    let best = null;
+    for(const m of ROTATION_GROUP){
+      const pts = cells.map(p => applyMat(m, p));
+      const minX = Math.min(...pts.map(p=>p[0]));
+      const minY = Math.min(...pts.map(p=>p[1]));
+      const minZ = Math.min(...pts.map(p=>p[2]));
+      const norm = pts.map(p => [p[0]-minX, p[1]-minY, p[2]-minZ]);
+      norm.sort((a,b) => a[0]-b[0] || a[1]-b[1] || a[2]-b[2]);
+      const key = norm.map(p => p.join(':')).join(',');
+      if(best === null || key < best) best = key;
+    }
+    return best;
+  }
+
+  function mirrorCells(cells){
+    return cells.map(([x,y,z]) => [-x, y, z]);
+  }
+
+  /* =========================================================
+     2. Procedural polycube generation
+  ========================================================= */
+
+  function randomPolycube(n){
+    const dirs = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+    for(let attempt=0; attempt<400; attempt++){
+      const cells = [[0,0,0]];
+      const cellSet = new Set(['0,0,0']);
+      let stuck = 0;
+      while(cells.length < n && stuck < 600){
+        const base = cells[Math.floor(Math.random()*cells.length)];
+        const d = dirs[Math.floor(Math.random()*dirs.length)];
+        const np = [base[0]+d[0], base[1]+d[1], base[2]+d[2]];
+        const key = np.join(',');
+        if(!cellSet.has(key)){
+          cellSet.add(key);
+          cells.push(np);
+          stuck = 0;
+        } else {
+          stuck++;
+        }
+      }
+      if(cells.length === n){
+        const c1 = canonicalForm(cells);
+        const c2 = canonicalForm(mirrorCells(cells));
+        if(c1 !== c2) return cells; // chiral: valid for the "mirror" distractor trick
+      }
+    }
+    // Extremely unlikely fallback: a simple L-shaped chiral tromino-like extension.
+    const fallback = [[0,0,0],[1,0,0],[2,0,0],[2,1,0],[2,1,1]];
+    while(fallback.length < n) fallback.push([fallback.length,0,0]);
+    return fallback;
+  }
+
+  function shuffle(arr){
+    for(let i=arr.length-1;i>0;i--){
+      const j = Math.floor(Math.random()*(i+1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  function buildTrial(n){
+    const target = randomPolycube(n);
+    const targetCanon = canonicalForm(target);
+    const mirror = mirrorCells(target);
+    const usedCanon = [targetCanon, canonicalForm(mirror)];
+
+    function differentShape(){
+      let s, c;
+      do { s = randomPolycube(n); c = canonicalForm(s); } while(usedCanon.includes(c));
+      usedCanon.push(c);
+      return s;
+    }
+
+    const distA = differentShape();
+    const distB = differentShape();
+
+    const options = [
+      { cells: target, isCorrect: true,  kind: 'correct' },
+      { cells: mirror, isCorrect: false, kind: 'mirror'  },
+      { cells: distA,  isCorrect: false, kind: 'different' },
+      { cells: distB,  isCorrect: false, kind: 'different' },
+    ];
+    shuffle(options);
+    return options;
+  }
+
+  /* =========================================================
+     3. Three.js scene plumbing
+  ========================================================= */
+
+  const CUBE_GEO = new THREE.BoxGeometry(0.92, 0.92, 0.92);
+  const EDGE_GEO = new THREE.EdgesGeometry(CUBE_GEO);
+  const CUBE_MAT = new THREE.MeshStandardMaterial({ color: 0x4a6fa5, roughness: 0.55, metalness: 0.06 });
+  const EDGE_MAT = new THREE.LineBasicMaterial({ color: 0x0b0f14, transparent: true, opacity: 0.55 });
+
+  function buildShapeGroup(cells){
+    const group = new THREE.Group();
+    const cx = cells.reduce((s,p)=>s+p[0],0)/cells.length;
+    const cy = cells.reduce((s,p)=>s+p[1],0)/cells.length;
+    const cz = cells.reduce((s,p)=>s+p[2],0)/cells.length;
+    for(const [x,y,z] of cells){
+      const mesh = new THREE.Mesh(CUBE_GEO, CUBE_MAT);
+      mesh.position.set(x-cx, y-cy, z-cz);
+      group.add(mesh);
+      const edges = new THREE.LineSegments(EDGE_GEO, EDGE_MAT);
+      edges.position.copy(mesh.position);
+      group.add(edges);
+    }
+    return group;
+  }
+
+  function makeViewport(canvas){
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
+    camera.position.set(0, 0, 7.2);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+    const key = new THREE.DirectionalLight(0xffffff, 0.95); key.position.set(4, 6, 5); scene.add(key);
+    const fill = new THREE.DirectionalLight(0x8fb4d9, 0.35); fill.position.set(-5, -3, -2); scene.add(fill);
+    const rim = new THREE.DirectionalLight(0xe3a33e, 0.22); rim.position.set(-2, 3, -6); scene.add(rim);
+
+    return { renderer, scene, camera, group: null };
+  }
+
+  function setGroup(vp, group){
+    if(vp.group) vp.scene.remove(vp.group);
+    vp.group = group;
+    vp.scene.add(group);
+  }
+
+  function randomQuaternion(){
+    const u1 = Math.random(), u2 = Math.random(), u3 = Math.random();
+    return new THREE.Quaternion(
+      Math.sqrt(1-u1) * Math.sin(2*Math.PI*u2),
+      Math.sqrt(1-u1) * Math.cos(2*Math.PI*u2),
+      Math.sqrt(u1)   * Math.sin(2*Math.PI*u3),
+      Math.sqrt(u1)   * Math.cos(2*Math.PI*u3)
+    );
+  }
+
+  /* =========================================================
+     4. DOM wiring
+  ========================================================= */
+
+  const targetCanvas   = document.getElementById('target-canvas');
+  const targetPanel    = document.getElementById('target-panel');
+  const optionPanels   = Array.from(document.querySelectorAll('.option-panel'));
+  const optionCanvases = optionPanels.map(p => p.querySelector('canvas'));
+  const readoutEl      = document.getElementById('readout');
+  const feedbackEl     = document.getElementById('feedback');
+  const nextBtn        = document.getElementById('next-btn');
+  const trialEl        = document.getElementById('stat-trial');
+  const accEl          = document.getElementById('stat-acc');
+  const streakEl       = document.getElementById('stat-streak');
+  const avgEl          = document.getElementById('stat-avg');
+  const difficultyBtns = Array.from(document.querySelectorAll('.diff-btn'));
+  const cubeCountLabel = document.getElementById('cube-count-label');
+  const resetLink      = document.getElementById('reset-link');
+
+  const targetViewport  = makeViewport(targetCanvas);
+  const optionViewports = optionCanvases.map(makeViewport);
+  const allViewports    = [targetViewport, ...optionViewports];
+
+  function sizeViewport(vp, canvas){
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    if(w <= 0 || h <= 0) return;
+    const pr = Math.min(window.devicePixelRatio || 1, 2);
+    vp.renderer.setPixelRatio(pr);
+    vp.renderer.setSize(w, h, false);
+    vp.camera.aspect = w / h;
+    vp.camera.updateProjectionMatrix();
+  }
+  function resizeAll(){
+    sizeViewport(targetViewport, targetCanvas);
+    optionViewports.forEach((vp, i) => sizeViewport(vp, optionCanvases[i]));
+  }
+  resizeAll();
+
+  const ro = new ResizeObserver(resizeAll);
+  ro.observe(targetPanel);
+  optionPanels.forEach(p => ro.observe(p));
+  window.addEventListener('resize', resizeAll);
+
+  /* =========================================================
+     5. Game state & flow
+  ========================================================= */
+
+  let numCubes   = 9;
+  let stats      = { attempts: 0, correct: 0, streak: 0, best: 0, totalTime: 0 };
+  let trialCount = 0;
+  let trial      = null;
+
+  function updateStatsUI(){
+    trialEl.textContent = trialCount;
+    accEl.textContent   = stats.attempts ? Math.round((stats.correct/stats.attempts)*100) + '%' : '—';
+    streakEl.textContent = stats.best ? `${stats.streak} (best ${stats.best})` : `${stats.streak}`;
+    avgEl.textContent    = stats.attempts ? (stats.totalTime/stats.attempts).toFixed(1) + 's' : '—';
+  }
+
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function updateReadout(){
+    if(!targetViewport.group) return;
+    const e = new THREE.Euler().setFromQuaternion(targetViewport.group.quaternion, 'YXZ');
+    const yDeg = Math.round(THREE.MathUtils.radToDeg(e.y));
+    const xDeg = Math.round(THREE.MathUtils.radToDeg(e.x));
+    readoutEl.textContent = `Y ${yDeg}° · X ${xDeg}°`;
+  }
+
+  function startNewTrial(){
+    const options = buildTrial(numCubes);
+    trial = { options, answered: false, startTime: performance.now() };
+    trialCount++;
+
+    optionPanels.forEach(p => p.classList.remove('correct', 'incorrect', 'reveal', 'shake', 'dim'));
+    feedbackEl.textContent = 'Study the target, then choose its match.';
+    feedbackEl.className = 'feedback';
+    nextBtn.hidden = true;
+
+    setGroup(targetViewport, buildShapeGroup(options.find(o => o.isCorrect).cells));
+    targetViewport.group.quaternion.copy(randomQuaternion());
+    userHasDragged = false;
+    updateReadout();
+
+    options.forEach((opt, i) => {
+      const group = buildShapeGroup(opt.cells);
+      group.quaternion.copy(randomQuaternion());
+      setGroup(optionViewports[i], group);
+    });
+
+    updateStatsUI();
+  }
+
+  function selectOption(idx){
+    if(!trial || trial.answered) return;
+    trial.answered = true;
+    const elapsed = (performance.now() - trial.startTime) / 1000;
+    const opt = trial.options[idx];
+
+    stats.attempts++;
+    stats.totalTime += elapsed;
+
+    let feedback;
+    if(opt.isCorrect){
+      stats.correct++;
+      stats.streak++;
+      stats.best = Math.max(stats.best, stats.streak);
+      feedback = 'Correct — that was the true rotation.';
+      optionPanels[idx].classList.add('correct');
+    } else {
+      stats.streak = 0;
+      feedback = opt.kind === 'mirror'
+        ? 'Mirror image — same silhouette, opposite handedness.'
+        : "Different figure — the arms don't match up.";
+      optionPanels[idx].classList.add('incorrect');
+      if(!prefersReducedMotion) optionPanels[idx].classList.add('shake');
+      const correctIdx = trial.options.findIndex(o => o.isCorrect);
+      optionPanels[correctIdx].classList.add('reveal');
+    }
+
+    optionPanels.forEach((p, i) => {
+      if(i !== idx && !trial.options[i].isCorrect) p.classList.add('dim');
+    });
+
+    updateStatsUI();
+    feedbackEl.textContent = feedback;
+    feedbackEl.className = 'feedback ' + (opt.isCorrect ? 'good' : 'bad');
+    nextBtn.hidden = false;
+    nextBtn.focus();
+  }
+
+  function resetStats(){
+    stats = { attempts: 0, correct: 0, streak: 0, best: 0, totalTime: 0 };
+    trialCount = 0;
+    startNewTrial();
+  }
+
+  /* -------- difficulty controls -------- */
+  difficultyBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      difficultyBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      numCubes = Number(btn.dataset.cubes);
+      cubeCountLabel.textContent = `Complexity — ${numCubes} cubes`;
+      startNewTrial();
+    });
+  });
+
+  /* -------- option selection -------- */
+  optionPanels.forEach((panel, i) => {
+    panel.addEventListener('click', () => selectOption(i));
+    panel.addEventListener('keydown', e => {
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); selectOption(i); }
+    });
+  });
+
+  nextBtn.addEventListener('click', startNewTrial);
+
+  resetLink.addEventListener('click', e => { e.preventDefault(); resetStats(); });
+
+  window.addEventListener('keydown', e => {
+    if(!trial) return;
+    if(!trial.answered && ['1','2','3','4'].includes(e.key)){
+      selectOption(Number(e.key) - 1);
+    } else if(trial.answered && (e.key === 'Enter' || e.key === ' ')){
+      e.preventDefault();
+      startNewTrial();
+    }
+  });
+
+  /* -------- target drag-to-inspect -------- */
+  let isDragging = false, lastPX = 0, lastPY = 0, userHasDragged = false;
+
+  targetCanvas.addEventListener('pointerdown', e => {
+    isDragging = true;
+    userHasDragged = true;
+    lastPX = e.clientX; lastPY = e.clientY;
+    targetCanvas.setPointerCapture(e.pointerId);
+    targetCanvas.classList.add('dragging');
+  });
+  targetCanvas.addEventListener('pointermove', e => {
+    if(!isDragging || !targetViewport.group) return;
+    const dx = e.clientX - lastPX, dy = e.clientY - lastPY;
+    lastPX = e.clientX; lastPY = e.clientY;
+    const qY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), dx * 0.01);
+    const qX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0), dy * 0.01);
+    targetViewport.group.quaternion.premultiply(qY).premultiply(qX);
+    updateReadout();
+  });
+  function endDrag(){ isDragging = false; targetCanvas.classList.remove('dragging'); }
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', endDrag);
+
+  /* =========================================================
+     6. Render loop
+  ========================================================= */
+
+  const clock = new THREE.Clock();
+
+  function animate(){
+    requestAnimationFrame(animate);
+    const dt = clock.getDelta();
+
+    if(targetViewport.group && !isDragging && !userHasDragged && !prefersReducedMotion){
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), dt * 0.25);
+      targetViewport.group.quaternion.premultiply(q);
+      updateReadout();
+    }
+
+    allViewports.forEach(vp => vp.renderer.render(vp.scene, vp.camera));
+  }
+
+  updateStatsUI();
+  startNewTrial();
+  requestAnimationFrame(animate);
+
+})();
+</script>
+</body>
+</html>

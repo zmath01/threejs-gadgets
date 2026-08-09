@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js Differential Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; font-family: sans-serif; }
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            color: #fff;
+            pointer-events: none;
+            text-shadow: 1px 1px 2px black;
+            z-index: 10;
+        }
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: center;
+            border: 1px solid #444;
+            z-index: 10;
+        }
+        .control-row { display: flex; gap: 15px; align-items: center; width: 100%; justify-content: center; }
+        button {
+            padding: 8px 16px;
+            cursor: pointer;
+            background: #007bff;
+            border: none;
+            color: white;
+            border-radius: 4px;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        button:hover { background: #0056b3; }
+        button.active { background: #28a745; }
+        label { font-size: 14px; min-width: 120px; }
+        input[type=range] { width: 150px; }
+        .value-display { min-width: 40px; text-align: right; font-family: monospace; }
+        h1 { margin: 0 0 5px 0; font-size: 1.2rem; color: #ffaa00; }
+        p { margin: 0; font-size: 0.9rem; color: #ccc; }
+        #status { margin-top: 10px; font-size: 0.85rem; color: #aaa; font-style: italic; }
+    </style>
+    <!-- Import Map for Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <div id="info">
+        <h1>Automotive Differential Visualization</h1>
+        <p>Core Principle: Left Speed + Right Speed = 2 × Carrier Speed</p>
+        <p>Left Click: Rotate | Right Click: Pan | Scroll: Zoom</p>
+    </div>
+
+    <div id="controls">
+        <div class="control-row">
+            <button id="modeStraight">Straight Drive</button>
+            <button id="modeTurn">Turning</button>
+            <button id="modeSlip">One Wheel Slip (Ice)</button>
+        </div>
+        <div class="control-row">
+            <label>Carrier Speed (RPM):</label>
+            <input type="range" id="speedRange" min="0" max="3000" value="1000">
+            <span id="rpmValue" class="value-display">1000</span>
+        </div>
+        <div id="status">Mode: Straight Drive - Both wheels rotate equally</div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- Configuration ---
+        const CONFIG = {
+            ringGearTeeth: 40,
+            spiderGearTeeth: 12,
+            sideGearTeeth: 20, // Must match ratio: Ring/Spider != Side/Spider usually, but for visual sim we simplify
+            carrierRadius: 2.5,
+            gearThickness: 0.6
+        };
+
+        // --- Scene Setup ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a1a1a);
+        scene.fog = new THREE.Fog(0x1a1a1a, 10, 50);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(8, 6, 8);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+
+        // --- Lighting ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+        dirLight.position.set(5, 10, 7);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+        
+        const pointLight = new THREE.PointLight(0x4444ff, 0.5);
+        pointLight.position.set(0, 0, 0);
+        scene.add(pointLight);
+
+        // --- Materials ---
+        const matSteel = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.3, metalness: 0.9 });
+        const matGold = new THREE.MeshStandardMaterial({ color: 0xffd700, roughness: 0.4, metalness: 0.6 }); // Spider gears
+        const matDark = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.5, metalness: 0.7 });
+        const matRed = new THREE.MeshStandardMaterial({ color: 0xcc0000, roughness: 0.3, metalness: 0.5 });
+
+        // --- Helper: Create Gear ---
+        function createGear(teeth, radius, thickness, colorMat, holeRadius = 0) {
+            const shape = new THREE.Shape();
+            const outerRadius = radius;
+            const innerRadius = radius * 0.85; // Root radius approx
+            const hole = holeRadius > 0 ? holeRadius : 0;
+
+            // Simple gear profile approximation
+            for (let i = 0; i < teeth; i++) {
+                const angle = (i / teeth) * Math.PI * 2;
+                const nextAngle = ((i + 1) / teeth) * Math.PI * 2;
+                const midAngle = (angle + nextAngle) / 2;
+                
+                // Tooth tip
+                shape.lineTo(Math.cos(angle) * outerRadius, Math.sin(angle) * outerRadius);
+                // Tooth side
+                shape.lineTo(Math.cos(midAngle - 0.05) * outerRadius, Math.sin(midAngle - 0.05) * outerRadius);
+                shape.lineTo(Math.cos(midAngle + 0.05) * outerRadius, Math.sin(midAngle + 0.05) * outerRadius);
+                // Next valley
+                shape.lineTo(Math.cos(nextAngle) * innerRadius, Math.sin(nextAngle) * innerRadius);
+            }
+            shape.closePath();
+
+            if (hole > 0) {
+                const holePath = new THREE.Path();
+                holePath.absarc(0, 0, hole, 0, Math.PI * 2, true);
+                shape.holes.push(holePath);
+            }
+
+            const extrudeSettings = { depth: thickness, bevelEnabled: true, bevelSegments: 2, steps: 1, bevelSize: 0.05, bevelThickness: 0.05 };
+            const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+            geometry.center(); // Center geometry
+            const mesh = new THREE.Mesh(geometry, colorMat);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            return mesh;
+        }
+
+        function createCylinder(radius, height, colorMat) {
+            const geo = new THREE.CylinderGeometry(radius, radius, height, 32);
+            const mesh = new THREE.Mesh(geo, colorMat);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            return mesh;
+        }
+
+        // --- Build Differential Assembly ---
+
+        const diffGroup = new THREE.Group();
+        scene.add(diffGroup);
+
+        // 1. Input Shaft & Pinion (Simplified visual)
+        const pinionShaft = createCylinder(0.4, 4, matSteel);
+        pinionShaft.rotation.z = Math.PI / 2;
+        pinionShaft.position.x = -4;
+        diffGroup.add(pinionShaft);
+
+        const pinionGear = createGear(12, 1.2, 0.8, matSteel, 0.4);
+        pinionGear.rotation.x = Math.PI / 2;
+        pinionGear.position.x = -2.5;
+        diffGroup.add(pinionGear);
+
+        // 2. Ring Gear (Large driven gear)
+        // We will attach this to the Carrier
+        const ringGearRadius = 3.5;
+        const ringGear = createGear(CONFIG.ringGearTeeth, ringGearRadius, 0.8, matSteel, 2.0);
+        ringGear.rotation.x = Math.PI / 2; // Face forward
+        
+        // 3. Differential Carrier (The housing that holds spider gears)
+        const carrierGroup = new THREE.Group();
+        diffGroup.add(carrierGroup);
+
+        // Carrier Visuals (Box-like structure holding the cross pin)
+        const carrierBox = createCylinder(2.8, 1.0, matDark);
+        carrierBox.rotation.x = Math.PI / 2;
+        carrierGroup.add(carrierBox);
+        
+        // Add Ring Gear to Carrier
+        ringGear.position.z = 0.6; // Offset slightly
+        carrierGroup.add(ringGear);
+
+        // Cross Pin (holds spider gears)
+        const crossPin = createCylinder(0.3, 2.5, matSteel);
+        crossPin.rotation.x = Math.PI / 2; // Aligned with axle axis initially? No, perpendicular to input
+        // Actually, cross pin is perpendicular to the axle shafts. 
+        // Axles are X-axis. Input is Z-axis (via ring gear). Cross pin is Y-axis? 
+        // Standard diff: Input turns Ring Gear. Ring Gear turns Carrier. 
+        // Carrier rotates around X-axis (axle axis). 
+        // Wait, Ring Gear rotates around X-axis. So Carrier rotates around X-axis.
+        // Spider gears are mounted on a pin inside the carrier. The pin is perpendicular to X. Let's say Y or Z.
+        // Let's make the pin along the Z axis for visualization clarity? 
+        // No, usually the spider gears rotate on an axis perpendicular to the axle.
+        // If Axles are X, Carrier rotates around X. Spider pin is usually Y or Z. Let's use Y.
+        
+        const spiderPinGeo = new THREE.CylinderGeometry(0.2, 0.2, 2.2, 16);
+        spiderPinGeo.rotateZ(Math.PI / 2); // Align along Y
+        const spiderPin = new THREE.Mesh(spiderPinGeo, matSteel);
+        carrierGroup.add(spiderPin);
+
+        // 4. Spider Gears (The small gears that rotate on the pin)
+        const spiderGearRadius = 0.8;
+        const spiderGear1 = createGear(CONFIG.spiderGearTeeth, spiderGearRadius, 0.6, matGold, 0.2);
+        const spiderGear2 = createGear(CONFIG.spiderGearTeeth, spiderGearRadius, 0.6, matGold, 0.2);
+        
+        spiderGear1.position.y = -0.6;
+        spiderGear2.position.y = 0.6;
+        // Initial rotation to mesh? They are bevel gears in reality, but we use spur for simple visual demo of rotation logic
+        // To make them look like bevel gears would require complex geometry. 
+        // We will simulate the *motion* of bevel gears using standard gears rotated 90deg visually or just accept the abstraction.
+        // Better: Rotate them 45 deg to hint at bevel? No, let's just rotate the mesh to face the side gears.
+        // Side gears are on X axis. Spider gears on Y axis. They mesh.
+        spiderGear1.rotation.x = Math.PI / 2; // Face X axis
+        spiderGear2.rotation.x = Math.PI / 2;
+
+        carrierGroup.add(spiderGear1);
+        carrierGroup.add(spiderGear2);
+
+        // 5. Side Gears (Connected to Axles)
+        const sideGearRadius = 1.5;
+        const leftSideGear = createGear(CONFIG.sideGearTeeth, sideGearRadius, 0.6, matSteel, 0.5);
+        const rightSideGear = createGear(CONFIG.sideGearTeeth, sideGearRadius, 0.6, matSteel, 0.5);
+
+        leftSideGear.rotation.y = Math.PI / 2; // Face Y? No, face Z? 
+        // Axles are along X. Side gears must face the spider gears (which are on Y axis inside carrier).
+        // So Side gears plane is YZ. Normal is X.
+        leftSideGear.rotation.y = Math.PI / 2; 
+        rightSideGear.rotation.y = Math.PI / 2;
+
+        leftSideGear.position.x = -1.2;
+        rightSideGear.position.x = 1.2;
+
+        carrierGroup.add(leftSideGear);
+        carrierGroup.add(rightSideGear);
+
+        // 6. Axle Shafts
+        const axleGeo = new THREE.CylinderGeometry(0.5, 0.5, 4, 16);
+        axleGeo.rotateZ(Math.PI / 2);
+        
+        const leftAxle = new THREE.Mesh(axleGeo, matSteel);
+        leftAxle.position.x = -3.5;
+        // We need a pivot group for the axle to rotate independently of the carrier
+        const leftAxlePivot = new THREE.Group();
+        leftAxlePivot.add(leftAxle);
+        // Add a wheel visual
+        const wheelL = createCylinder(1.5, 0.8, matRed);
+        wheelL.rotation.z = Math.PI / 2;
+        wheelL.position.x = -2;
+        leftAxle.add(wheelL);
+        
+        const rightAxle = new THREE.Mesh(axleGeo, matSteel);
+        rightAxle.position.x = 3.5;
+        const rightAxlePivot = new THREE.Group();
+        rightAxlePivot.add(rightAxle);
+        const wheelR = createCylinder(1.5, 0.8, matRed);
+        wheelR.rotation.z = Math.PI / 2;
+        wheelR.position.x = 2;
+        rightAxle.add(wheelR);
+
+        scene.add(leftAxlePivot);
+        scene.add(rightAxlePivot);
+
+        // Align pivots with side gears
+        leftAxlePivot.position.x = -1.2;
+        rightAxlePivot.position.x = 1.2;
+
+        // --- Animation State ---
+        let carrierAngle = 0;
+        let spiderAngle = 0; // Rotation of spider gears on their own pin
+        let axleDiff = 0; // Relative rotation difference caused by spider gears
+        
+        let mode = 'straight'; // straight, turn, slip
+        let baseRPM = 1000;
+        let turnOffset = 0; // Extra speed for one side
+        let slipFactor = 0;
+
+        const statusEl = document.getElementById('status');
+        const rpmDisplay = document.getElementById('rpmValue');
+        const speedInput = document.getElementById('speedRange');
+
+        // Controls
+        document.getElementById('modeStraight').onclick = () => {
+            mode = 'straight';
+            slipFactor = 0;
+            turnOffset = 0;
+            statusEl.textContent = "Mode: Straight Drive - Spider gears do not rotate on their pin. Both wheels equal speed.";
+            updateButtons('modeStraight');
+        };
+        document.getElementById('modeTurn').onclick = () => {
+            mode = 'turn';
+            slipFactor = 0;
+            turnOffset = 0.5; // Simulate turning
+            statusEl.textContent = "Mode: Turning - Outer wheel spins faster, inner slower. Spider gears rotate.";
+            updateButtons('modeTurn');
+        };
+        document.getElementById('modeSlip').onclick = () => {
+            mode = 'slip';
+            turnOffset = 0;
+            slipFactor = 1; // One wheel stops, other goes double
+            statusEl.textContent = "Mode: One Wheel Slip - Left wheel stuck (0 RPM). Right wheel spins at 2x Carrier speed.";
+            updateButtons('modeSlip');
+        };
+
+        function updateButtons(activeId) {
+            ['modeStraight', 'modeTurn', 'modeSlip'].forEach(id => {
+                document.getElementById(id).classList.toggle('active', id === activeId);
+            });
+        }
+
+        speedInput.addEventListener('input', (e) => {
+            baseRPM = parseInt(e.target.value);
+            rpmDisplay.textContent = baseRPM;
+        });
+
+        // --- Animation Loop ---
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const dt = clock.getDelta();
+            
+            // Calculate Carrier Rotation
+            // RPM to rad/s: RPM * 2PI / 60
+            const carrierSpeedRadS = (baseRPM * Math.PI * 2) / 60;
+            const dCarrier = carrierSpeedRadS * dt;
+
+            carrierAngle += dCarrier;
+            carrierGroup.rotation.x = carrierAngle;
+
+            let leftSpeedRatio = 1;
+            let rightSpeedRatio = 1;
+            let spiderSpinSpeed = 0;
+
+            if (mode === 'straight') {
+                // wL = wR = wCarrier
+                leftSpeedRatio = 1;
+                rightSpeedRatio = 1;
+                spiderSpinSpeed = 0;
+            } else if (mode === 'turn') {
+                // Simulate a turn: Left slower, Right faster (or vice versa)
+                // wL = wC - d, wR = wC + d
+                const diff = carrierSpeedRadS * 0.4; // 40% difference
+                leftSpeedRatio = (carrierSpeedRadS - diff) / carrierSpeedRadS;
+                rightSpeedRatio = (carrierSpeedRadS + diff) / carrierSpeedRadS;
+                
+                // Spider gears must spin to accommodate this difference
+                // The rate of spider spin is proportional to the difference
+                spiderSpinSpeed = diff * 2; // Multiplier for visual effect
+            } else if (mode === 'slip') {
+                // Left wheel = 0. Right wheel = 2 * Carrier
+                leftSpeedRatio = 0;
+                rightSpeedRatio = 2;
+                // Spider spin is max
+                spiderSpinSpeed = carrierSpeedRadS; 
+            }
+
+            // Apply rotations
+            // Axles rotate relative to world, but their base is moving with carrier?
+            // Actually, in the scene graph:
+            // Carrier rotates around X.
+            // Side gears are children of Carrier, so they inherit Carrier rotation.
+            // But Side gears also rotate on their own axis (X) relative to Carrier.
+            // Total Rotation of Side Gear = Carrier Rotation + Relative Rotation
+            
+            // Relative rotation accumulation
+            const dLeftRel = (carrierSpeedRadS * leftSpeedRatio - carrierSpeedRadS) * dt;
+            const dRightRel = (carrierSpeedRadS * rightSpeedRatio - carrierSpeedRadS) * dt;
+
+            // We need to track cumulative relative angle
+            if (!leftAxlePivot.userData.relAngle) leftAxlePivot.userData.relAngle = 0;
+            if (!rightAxlePivot.userData.relAngle) rightAxlePivot.userData.relAngle = 0;
+            if (!spiderGear1.userData.spinAngle) spiderGear1.userData.spinAngle = 0;
+
+            leftAxlePivot.userData.relAngle += dLeftRel;
+            rightAxlePivot.userData.relAngle += dRightRel;
+            spiderGear1.userData.spinAngle += spiderSpinSpeed * dt;
+            spiderGear2.userData.spinAngle -= spiderSpinSpeed * dt; // Opposite direction
+
+            // Apply relative rotation to the pivots (which are children of scene, but positioned at side gear loc)
+            // Wait, my scene graph setup:
+            // leftAxlePivot is added to scene. 
+            // But the Side Gear is inside carrierGroup.
+            // Visual sync: We must rotate the independent axle pivots to match the side gears inside the rotating carrier.
+            
+            // Total Angle for Left Axle = CarrierAngle + RelativeAngle
+            leftAxlePivot.rotation.x = carrierAngle + leftAxlePivot.userData.relAngle;
+            rightAxlePivot.rotation.x = carrierAngle + rightAxlePivot.userData.relAngle;
+
+            // Rotate Spider Gears on their pin (Y axis in local carrier space)
+            spiderGear1.rotation.z = spiderGear1.userData.spinAngle; // Rotating on their mount
+            spiderGear2.rotation.z = spiderGear2.userData.spinAngle;
+
+            // Sync Side Gear visuals inside carrier to the axle pivots?
+            // The side gears inside the carrier are just visual representations of the connection.
+            // Their rotation relative to carrier = relativeAngle of axle.
+            leftSideGear.rotation.x = leftAxlePivot.userData.relAngle; 
+            rightSideGear.rotation.x = rightAxlePivot.userData.relAngle;
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Handle Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>

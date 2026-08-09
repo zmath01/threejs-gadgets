@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Three.js Demo Suite</title>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #1a1a1a; color: #eee; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        h1 { margin-bottom: 10px; }
+        .controls { margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+        button { padding: 10px 20px; background: #0078d4; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; transition: background 0.2s; }
+        button:hover { background: #005a9e; }
+        button.active { background: #004578; border: 2px solid #4cc2ff; }
+        #container { width: 800px; height: 600px; background: #000; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.5); position: relative; }
+        #stats { margin-top: 10px; font-family: monospace; color: #aaa; }
+        #matrix-overlay { position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px; color: #4cc2ff; pointer-events: none; white-space: pre; display: none; }
+        #error { color: #ff6b6b; font-weight: bold; display: none; margin-top: 20px; text-align: center; }
+    </style>
+</head>
+<body>
+
+<h1>Three.js Compute Showcase</h1>
+<div id="error">Three.js failed to load. Check your internet connection.</div>
+
+<div class="controls">
+    <button id="btn-matrix" class="active">Matrix Math</button>
+    <button id="btn-particles">Particle Physics</button>
+    <button id="btn-gol">Game of Life</button>
+</div>
+
+<div id="container">
+    <div id="matrix-overlay"></div>
+</div>
+
+<div id="stats">FPS: 0 | Demo: Matrix</div>
+
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// --- Setup ---
+const container = document.getElementById('container');
+const statsEl = document.getElementById('stats');
+const overlayEl = document.getElementById('matrix-overlay');
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x111122);
+
+const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100);
+camera.position.set(4, 3, 6);
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(container.clientWidth, container.clientHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+container.prepend(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.autoRotate = false;
+controls.target.set(0, 0, 0);
+
+// Resize
+function resize() {
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+}
+window.addEventListener('resize', resize);
+
+// --- Demo Manager ---
+let currentDemo = null;
+let demoName = 'matrix';
+
+// Helper: remove all children except the renderer (which is first child)
+function clearScene() {
+    while (scene.children.length > 0) {
+        const child = scene.children[0];
+        if (child === renderer.domElement) break; // skip renderer
+        scene.remove(child);
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+            if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+            else child.material.dispose();
+        }
+        // recursively dispose textures, etc. (simplified)
+    }
+}
+
+// --- DEMO 1: Matrix Math (visual + overlay) ---
+const MatrixDemo = {
+    init() {
+        clearScene();
+        overlayEl.style.display = 'block';
+        statsEl.textContent = 'Demo: Matrix Math';
+
+        // A cube with a transformation matrix
+        const geometry = new THREE.BoxGeometry(1.2, 1.2, 1.2);
+        const material = new THREE.MeshStandardMaterial({
+            color: 0x4cc2ff,
+            roughness: 0.3,
+            metalness: 0.6,
+            emissive: new THREE.Color(0x004488),
+            emissiveIntensity: 0.2,
+        });
+        const cube = new THREE.Mesh(geometry, material);
+        cube.castShadow = true;
+        cube.receiveShadow = true;
+        scene.add(cube);
+
+        // Add axes helper
+        const axes = new THREE.AxesHelper(2);
+        scene.add(axes);
+
+        // Lights
+        const ambient = new THREE.AmbientLight(0x404060);
+        scene.add(ambient);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+        dirLight.position.set(2, 5, 3);
+        scene.add(dirLight);
+        const fillLight = new THREE.DirectionalLight(0x88aaff, 0.5);
+        fillLight.position.set(-2, 1, -2);
+        scene.add(fillLight);
+
+        // Store cube and matrix for update
+        this.cube = cube;
+        this.matrix = new THREE.Matrix4();
+
+        // Generate a random transformation matrix (rotation + scale + translation)
+        // We'll make it a composition of rotation and scale for visual interest
+        const rot = new THREE.Matrix4().makeRotationY(0.3);
+        const rotX = new THREE.Matrix4().makeRotationX(0.1);
+        const scale = new THREE.Matrix4().makeScale(0.9, 1.1, 0.95);
+        this.matrix.multiplyMatrices(rot, scale);
+        this.matrix.multiply(rotX);
+        // Apply to cube
+        cube.matrix.copy(this.matrix);
+        cube.matrix.decompose(cube.position, cube.quaternion, cube.scale);
+        cube.updateMatrix();
+
+        // Display matrix as text
+        this.updateOverlay();
+
+        // Store for animation
+        this.time = 0;
+    },
+
+    updateOverlay() {
+        const m = this.matrix.elements;
+        const text = `Transformation Matrix:\n` +
+            `[${m[0].toFixed(2)}, ${m[4].toFixed(2)}, ${m[8].toFixed(2)}, ${m[12].toFixed(2)}]\n` +
+            `[${m[1].toFixed(2)}, ${m[5].toFixed(2)}, ${m[9].toFixed(2)}, ${m[13].toFixed(2)}]\n` +
+            `[${m[2].toFixed(2)}, ${m[6].toFixed(2)}, ${m[10].toFixed(2)}, ${m[14].toFixed(2)}]\n` +
+            `[${m[3].toFixed(2)}, ${m[7].toFixed(2)}, ${m[11].toFixed(2)}, ${m[15].toFixed(2)}]`;
+        overlayEl.textContent = text;
+    },
+
+    update(time, delta) {
+        this.time += delta;
+        // Slowly rotate the matrix for demonstration
+        const rot = new THREE.Matrix4().makeRotationY(delta * 0.5);
+        this.matrix.multiply(rot);
+        // Apply to cube
+        this.cube.matrix.copy(this.matrix);
+        this.cube.matrix.decompose(this.cube.position, this.cube.quaternion, this.cube.scale);
+        this.cube.updateMatrix();
+        this.updateOverlay();
+    },
+
+    dispose() {
+        overlayEl.style.display = 'none';
+        clearScene();
+    }
+};
+
+// --- DEMO 2: Particle Physics ---
+const ParticleDemo = {
+    count: 30000,
+    init() {
+        clearScene();
+        statsEl.textContent = `Demo: Particle Physics (${this.count} particles)`;
+
+        // Geometry
+        const positions = new Float32Array(this.count * 3);
+        const colors = new Float32Array(this.count * 3);
+        const velocities = [];
+
+        for (let i = 0; i < this.count; i++) {
+            positions[i*3] = (Math.random() - 0.5) * 4;
+            positions[i*3+1] = (Math.random() - 0.5) * 4;
+            positions[i*3+2] = (Math.random() - 0.5) * 4;
+            colors[i*3] = Math.random();
+            colors[i*3+1] = Math.random();
+            colors[i*3+2] = Math.random();
+            velocities.push({
+                x: (Math.random() - 0.5) * 0.05,
+                y: (Math.random() - 0.5) * 0.05,
+                z: (Math.random() - 0.5) * 0.05,
+            });
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const material = new THREE.PointsMaterial({
+            size: 0.04,
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.9,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+        });
+
+        this.points = new THREE.Points(geometry, material);
+        scene.add(this.points);
+
+        // Store velocities and boundaries
+        this.velocities = velocities;
+        this.bounds = 2.0;
+        this.gravity = new THREE.Vector3(0, -1.0, 0);
+        this.damping = 0.99;
+        this.bounce = 0.8;
+
+        // Ambient light for background (not needed for points, but keep)
+        const ambient = new THREE.AmbientLight(0x404060);
+        scene.add(ambient);
+    },
+
+    update(time, delta) {
+        const pos = this.points.geometry.attributes.position.array;
+        const vel = this.velocities;
+        const dt = Math.min(delta, 0.05);
+        const gravity = this.gravity;
+        const bounds = this.bounds;
+        const bounce = this.bounce;
+        const damping = this.damping;
+
+        for (let i = 0; i < this.count; i++) {
+            const i3 = i * 3;
+            // Apply gravity
+            vel[i].x += gravity.x * dt;
+            vel[i].y += gravity.y * dt;
+            vel[i].z += gravity.z * dt;
+
+            // Damping
+            vel[i].x *= damping;
+            vel[i].y *= damping;
+            vel[i].z *= damping;
+
+            // Update position
+            pos[i3] += vel[i].x * dt;
+            pos[i3+1] += vel[i].y * dt;
+            pos[i3+2] += vel[i].z * dt;
+
+            // Bounce off walls
+            for (let axis = 0; axis < 3; axis++) {
+                const idx = i3 + axis;
+                if (pos[idx] > bounds) {
+                    pos[idx] = bounds;
+                    vel[i][['x','y','z'][axis]] *= -bounce;
+                } else if (pos[idx] < -bounds) {
+                    pos[idx] = -bounds;
+                    vel[i][['x','y','z'][axis]] *= -bounce;
+                }
+            }
+        }
+
+        this.points.geometry.attributes.position.needsUpdate = true;
+    },
+
+    dispose() {
+        clearScene();
+    }
+};
+
+// --- DEMO 3: Game of Life ---
+const GolDemo = {
+    gridSize: 256, // 256x256 for performance, but can be increased
+    init() {
+        clearScene();
+        statsEl.textContent = `Demo: Game of Life (${this.gridSize}x${this.gridSize})`;
+
+        const size = this.gridSize;
+        // Create a data texture
+        const data = new Uint8Array(size * size * 4);
+        // Random initial state (about 20% alive)
+        for (let i = 0; i < size * size; i++) {
+            const val = Math.random() > 0.8 ? 255 : 0;
+            data[i*4] = val;
+            data[i*4+1] = val;
+            data[i*4+2] = val;
+            data[i*4+3] = 255;
+        }
+
+        const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+        texture.needsUpdate = true;
+        texture.minFilter = THREE.NearestFilter;
+        texture.magFilter = THREE.NearestFilter;
+
+        // Create a plane geometry with the same aspect as the container
+        const aspect = container.clientWidth / container.clientHeight;
+        const planeWidth = 4;
+        const planeHeight = planeWidth / aspect;
+        const geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
+        const material = new THREE.MeshBasicMaterial({ map: texture });
+        const mesh = new THREE.Mesh(geometry, material);
+        scene.add(mesh);
+
+        // Store for update
+        this.texture = texture;
+        this.mesh = mesh;
+        this.data = data;
+        this.size = size;
+
+        // Also store current state for computation (we'll use the texture data as source and write to a new buffer)
+        // We'll maintain two arrays: current (read) and next (write)
+        this.current = new Uint8Array(size * size);
+        this.next = new Uint8Array(size * size);
+        // Initialize current from texture
+        for (let i = 0; i < size * size; i++) {
+            this.current[i] = data[i*4] > 0 ? 1 : 0;
+        }
+
+        // Camera adjustment: zoom to fit
+        camera.position.set(0, 0, 3);
+        controls.target.set(0, 0, 0);
+        controls.update();
+
+        // Stats
+        this.generation = 0;
+        this.updateStats();
+    },
+
+    updateStats() {
+        statsEl.textContent = `Demo: Game of Life | Grid: ${this.size}x${this.size} | Gen: ${this.generation}`;
+    },
+
+    update(time, delta) {
+        const size = this.size;
+        const current = this.current;
+        const next = this.next;
+        const data = this.data;
+
+        // Compute next generation
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+                const idx = y * size + x;
+                let neighbors = 0;
+                for (let dy = -1; dy <= 1; dy++) {
+                    for (let dx = -1; dx <= 1; dx++) {
+                        if (dx === 0 && dy === 0) continue;
+                        const nx = (x + dx + size) % size;
+                        const ny = (y + dy + size) % size;
+                        neighbors += current[ny * size + nx];
+                    }
+                }
+                const alive = current[idx];
+                if (alive) {
+                    next[idx] = (neighbors === 2 || neighbors === 3) ? 1 : 0;
+                } else {
+                    next[idx] = (neighbors === 3) ? 1 : 0;
+                }
+            }
+        }
+
+        // Update texture data
+        for (let i = 0; i < size * size; i++) {
+            const val = next[i] * 255;
+            data[i*4] = val;
+            data[i*4+1] = val;
+            data[i*4+2] = val;
+            // alpha stays 255
+        }
+        this.texture.needsUpdate = true;
+
+        // Swap buffers
+        [this.current, this.next] = [this.next, this.current];
+        this.generation++;
+        if (this.generation % 10 === 0) this.updateStats();
+    },
+
+    dispose() {
+        clearScene();
+        // Reset camera position for next demo
+        camera.position.set(4, 3, 6);
+        controls.target.set(0, 0, 0);
+        controls.update();
+    }
+};
+
+// --- Switching Logic ---
+async function loadDemo(name) {
+    // Dispose current
+    if (currentDemo && currentDemo.dispose) {
+        currentDemo.dispose();
+    }
+
+    // Update button styles
+    document.querySelectorAll('.controls button').forEach(btn => btn.classList.remove('active'));
+    const btn = document.getElementById(`btn-${name}`);
+    if (btn) btn.classList.add('active');
+
+    // Instantiate demo
+    let demo;
+    switch (name) {
+        case 'matrix':
+            demo = Object.create(MatrixDemo);
+            break;
+        case 'particles':
+            demo = Object.create(ParticleDemo);
+            break;
+        case 'gol':
+            demo = Object.create(GolDemo);
+            break;
+        default:
+            return;
+    }
+    demo.init();
+    currentDemo = demo;
+    demoName = name;
+}
+
+// --- Animation Loop ---
+let lastTime = 0;
+function animate(time) {
+    requestAnimationFrame(animate);
+
+    const delta = Math.min((time - lastTime) / 1000, 0.05);
+    lastTime = time;
+
+    if (currentDemo && currentDemo.update) {
+        currentDemo.update(time / 1000, delta);
+    }
+
+    controls.update();
+    renderer.render(scene, camera);
+}
+
+// --- Start ---
+// Check if Three.js loaded
+if (typeof THREE === 'undefined') {
+    document.getElementById('error').style.display = 'block';
+} else {
+    // Load default demo
+    await loadDemo('matrix');
+    animate(0);
+}
+
+// Expose loadDemo globally for button onclick
+window.loadDemo = loadDemo;
+
+// Button event listeners (also handle clicks)
+document.getElementById('btn-matrix').addEventListener('click', () => loadDemo('matrix'));
+document.getElementById('btn-particles').addEventListener('click', () => loadDemo('particles'));
+document.getElementById('btn-gol').addEventListener('click', () => loadDemo('gol'));
+
+</script>
+</body>
+</html>

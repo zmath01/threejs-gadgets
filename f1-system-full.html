@@ -1,0 +1,1294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>F1 Systems Lab — Power Unit &amp; Dynamics Visualizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+:root{
+  --bg:#05070a;
+  --bg2:#0a0e13;
+  --panel:rgba(13,17,23,0.88);
+  --panel-soft:rgba(13,17,23,0.6);
+  --line:rgba(255,255,255,0.09);
+  --line-strong:rgba(255,255,255,0.22);
+  --text:#eef2f6;
+  --text-dim:#8a93a3;
+  --text-faint:#4d5763;
+  --red:#e10600;
+  --red-dim:#7a1410;
+  --cyan:#00e0ff;
+  --cyan-dim:#0a5c6b;
+  --amber:#ffb020;
+  --green:#3ddc84;
+  --font-display:'Rajdhani',sans-serif;
+  --font-mono:'JetBrains Mono',monospace;
+  --font-body:'Inter',sans-serif;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;font-family:var(--font-body);color:var(--text);}
+#canvas-wrap{position:fixed;inset:0;}
+#canvas-wrap canvas{display:block;touch-action:none;}
+
+/* background grid texture */
+#bg-grid{
+  position:fixed;inset:0;pointer-events:none;z-index:1;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+  background-size:42px 42px;
+  mask-image:radial-gradient(ellipse at 50% 40%, black 0%, transparent 72%);
+  -webkit-mask-image:radial-gradient(ellipse at 50% 40%, black 0%, transparent 72%);
+}
+
+/* ---------- top bar ---------- */
+header.hud-top{
+  position:fixed;top:0;left:0;right:0;z-index:20;
+  display:flex;align-items:flex-start;justify-content:space-between;gap:16px;
+  padding:18px 22px 0 22px;
+  pointer-events:none;
+}
+.brand{pointer-events:auto;}
+.brand .eyebrow{
+  font-family:var(--font-mono);font-size:10px;letter-spacing:.24em;color:var(--text-faint);
+  text-transform:uppercase;
+}
+.brand h1{
+  margin:2px 0 0 0;font-family:var(--font-display);font-weight:700;font-size:20px;
+  letter-spacing:.06em;color:var(--text);text-transform:uppercase;
+}
+.brand h1 span{color:var(--red);}
+
+nav.tabs{
+  pointer-events:auto;
+  display:flex;gap:6px;background:var(--panel);border:1px solid var(--line);
+  padding:5px;backdrop-filter:blur(10px);
+}
+.tab-btn{
+  position:relative;
+  font-family:var(--font-display);font-weight:600;font-size:13px;letter-spacing:.05em;
+  color:var(--text-dim);background:transparent;border:1px solid transparent;
+  padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;
+  text-transform:uppercase;transition:color .15s ease, border-color .15s ease, background .15s ease;
+}
+.tab-btn .num{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);}
+.tab-btn:hover{color:var(--text);}
+.tab-btn.active{color:var(--text);border-color:var(--line-strong);background:rgba(225,6,0,0.08);}
+.tab-btn.active .num{color:var(--red);}
+.tab-btn .dot{
+  width:6px;height:6px;border-radius:50%;background:var(--text-faint);opacity:0;
+  transition:opacity .15s ease;
+}
+.tab-btn.active .dot{opacity:1;background:var(--red);box-shadow:0 0 8px var(--red);animation:pulse-dot 1.4s ease-in-out infinite;}
+@keyframes pulse-dot{0%,100%{opacity:1;}50%{opacity:.3;}}
+
+/* ---------- side panel ---------- */
+aside#hud-panel{
+  position:fixed;right:20px;top:96px;bottom:96px;width:352px;max-width:calc(100vw - 40px);
+  z-index:20;background:var(--panel);border:1px solid var(--line);backdrop-filter:blur(10px);
+  overflow-y:auto;pointer-events:auto;
+}
+aside#hud-panel::-webkit-scrollbar{width:6px;}
+aside#hud-panel::-webkit-scrollbar-thumb{background:var(--line-strong);}
+.frame{position:relative;padding:20px;}
+.corner{position:absolute;width:11px;height:11px;pointer-events:none;}
+.corner.tl{top:-1px;left:-1px;border-top:2px solid var(--red);border-left:2px solid var(--red);}
+.corner.tr{top:-1px;right:-1px;border-top:2px solid var(--red);border-right:2px solid var(--red);}
+.corner.bl{bottom:-1px;left:-1px;border-bottom:2px solid var(--red);border-left:2px solid var(--red);}
+.corner.br{bottom:-1px;right:-1px;border-bottom:2px solid var(--red);border-right:2px solid var(--red);}
+
+.panel{display:none;}
+.panel.active{display:block;}
+.panel .kicker{font-family:var(--font-mono);font-size:10px;letter-spacing:.2em;color:var(--red);text-transform:uppercase;}
+.panel h2{margin:4px 0 10px 0;font-family:var(--font-display);font-weight:700;font-size:22px;letter-spacing:.03em;color:var(--text);}
+.panel p.desc{font-size:12.5px;line-height:1.55;color:var(--text-dim);margin:0 0 16px 0;}
+.panel p.note{font-size:11.5px;line-height:1.5;color:var(--text-faint);margin:14px 0 0 0;padding-top:12px;border-top:1px dashed var(--line);}
+.panel p.note b{color:var(--text-dim);}
+
+.field{margin-bottom:16px;}
+.field-row{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;}
+.field label{font-family:var(--font-display);font-weight:600;font-size:12.5px;letter-spacing:.04em;color:var(--text-dim);text-transform:uppercase;}
+.field .val{font-family:var(--font-mono);font-size:12.5px;color:var(--text);}
+input[type=range]{
+  -webkit-appearance:none;width:100%;height:3px;background:var(--line-strong);outline:none;cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--red);
+  border:2px solid #1a1a1a;cursor:pointer;box-shadow:0 0 6px rgba(225,6,0,.6);
+}
+input[type=range]::-moz-range-thumb{
+  width:14px;height:14px;border-radius:50%;background:var(--red);border:2px solid #1a1a1a;cursor:pointer;
+}
+
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;}
+.btn{
+  font-family:var(--font-display);font-weight:600;font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;
+  color:var(--text-dim);background:rgba(255,255,255,0.04);border:1px solid var(--line-strong);
+  padding:8px 12px;cursor:pointer;transition:all .15s ease;flex:1;
+}
+.btn:hover{color:var(--text);border-color:var(--text-dim);}
+.btn.active{color:var(--bg);background:var(--red);border-color:var(--red);}
+.btn.electric.active{color:var(--bg);background:var(--cyan);border-color:var(--cyan);}
+
+.readout-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;}
+.readout{background:rgba(255,255,255,0.03);border:1px solid var(--line);padding:9px 10px;}
+.readout .label{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;color:var(--text-faint);text-transform:uppercase;}
+.readout .num{font-family:var(--font-mono);font-weight:700;font-size:16px;color:var(--text);margin-top:2px;}
+.readout .num.accent{color:var(--red);}
+.readout .num.electric{color:var(--cyan);}
+.readout .num.amber{color:var(--amber);}
+.readout .num.green{color:var(--green);}
+.readout .unit{font-size:10px;color:var(--text-faint);font-weight:400;margin-left:2px;}
+
+.bar-wrap{margin-top:14px;}
+.bar-wrap .field-row{margin-bottom:5px;}
+.bar-track{height:8px;background:rgba(255,255,255,0.06);position:relative;overflow:hidden;border:1px solid var(--line);}
+.bar-fill{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,var(--cyan-dim),var(--cyan));transition:width .2s ease;}
+
+#scope{width:100%;height:120px;display:block;background:rgba(255,255,255,0.02);border:1px solid var(--line);margin-top:6px;}
+
+/* toggle switch */
+.switch-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:16px;}
+.switch-row label{font-family:var(--font-display);font-weight:600;font-size:12.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.04em;}
+.switch{position:relative;width:42px;height:22px;background:rgba(255,255,255,0.08);border:1px solid var(--line-strong);cursor:pointer;flex-shrink:0;}
+.switch .knob{position:absolute;top:1px;left:1px;width:18px;height:18px;background:var(--text-faint);transition:all .15s ease;}
+.switch.on{background:rgba(0,224,255,0.12);border-color:var(--cyan);}
+.switch.on .knob{left:21px;background:var(--cyan);box-shadow:0 0 6px var(--cyan);}
+
+/* ---------- bottom bits ---------- */
+.hint{
+  position:fixed;left:22px;bottom:18px;z-index:20;font-family:var(--font-mono);font-size:10.5px;
+  color:var(--text-faint);letter-spacing:.05em;pointer-events:none;
+}
+.hint b{color:var(--text-dim);}
+.legend{
+  position:fixed;left:22px;bottom:42px;z-index:20;display:flex;gap:14px;
+  font-family:var(--font-mono);font-size:10px;color:var(--text-faint);letter-spacing:.04em;
+  pointer-events:none;
+}
+.legend span{display:flex;align-items:center;gap:6px;}
+.legend i{width:8px;height:8px;display:inline-block;}
+
+@media (max-width:760px){
+  aside#hud-panel{left:12px;right:12px;top:auto;bottom:12px;width:auto;max-height:46vh;}
+  header.hud-top{flex-direction:column;padding:14px 14px 0 14px;}
+  nav.tabs{overflow-x:auto;max-width:100%;}
+  .legend{display:none;}
+}
+</style>
+</head>
+<body>
+
+<div id="bg-grid"></div>
+<div id="canvas-wrap"></div>
+
+<header class="hud-top">
+  <div class="brand">
+    <div class="eyebrow">Powertrain · Drivetrain · Chassis</div>
+    <h1>F1 SYSTEMS <span>LAB</span></h1>
+  </div>
+  <nav class="tabs">
+    <button class="tab-btn active" data-mod="engine"><span class="dot"></span><span class="num">01</span> Engine</button>
+    <button class="tab-btn" data-mod="diff"><span class="dot"></span><span class="num">02</span> Differential</button>
+    <button class="tab-btn" data-mod="steer"><span class="dot"></span><span class="num">03</span> Steering</button>
+    <button class="tab-btn" data-mod="susp"><span class="dot"></span><span class="num">04</span> Suspension</button>
+  </nav>
+</header>
+
+<aside id="hud-panel">
+  <div class="frame">
+    <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+
+    <!-- ENGINE PANEL -->
+    <div class="panel active" data-mod="engine">
+      <div class="kicker">01 · Power Unit</div>
+      <h2>V6 Turbo‑Hybrid</h2>
+      <p class="desc">A 1.6&nbsp;L, 90° V6 turbocharged internal‑combustion engine paired with a single turbocharger and the MGU‑K electric motor‑generator, which sits directly on the crankshaft and can either deploy stored energy or harvest it under braking.</p>
+
+      <div class="switch-row">
+        <label id="eng-era-label">Era: 2026–present</label>
+        <div class="switch on" id="eng-era-switch"><div class="knob"></div></div>
+      </div>
+
+      <div class="field">
+        <div class="field-row"><label>Engine speed</label><span class="val" id="eng-rpm-val">9,000 rpm</span></div>
+        <input type="range" id="eng-rpm" min="3000" max="15000" step="50" value="9000">
+      </div>
+
+      <div class="field">
+        <div class="field-row"><label>MGU‑K mode</label><span class="val" id="eng-mode-val">Neutral</span></div>
+        <div class="btn-row">
+          <button class="btn electric" id="eng-harvest">Harvest</button>
+          <button class="btn" id="eng-neutral">Neutral</button>
+          <button class="btn electric active" id="eng-deploy">Deploy</button>
+        </div>
+      </div>
+
+      <div class="bar-wrap">
+        <div class="field-row"><label>Energy store</label><span class="val" id="eng-batt-val">55%</span></div>
+        <div class="bar-track"><div class="bar-fill" id="eng-batt-bar" style="width:55%"></div></div>
+      </div>
+
+      <div class="readout-grid">
+        <div class="readout"><div class="label">ICE power</div><div class="num accent" id="eng-ice-kw">—<span class="unit">kW</span></div></div>
+        <div class="readout"><div class="label">MGU‑K power</div><div class="num electric" id="eng-mguk-kw">—<span class="unit">kW</span></div></div>
+        <div class="readout"><div class="label">Combined</div><div class="num" id="eng-total-kw">—<span class="unit">kW</span></div></div>
+        <div class="readout"><div class="label">Turbo spool</div><div class="num amber" id="eng-turbo-pct">—<span class="unit">%</span></div></div>
+      </div>
+
+      <p class="note" id="eng-note"><b>2026 regs:</b> the exhaust‑driven MGU‑H has been removed. The MGU‑K alone now handles energy recovery and roughly triples its output, moving the ICE/electric split close to 50:50 — but without the MGU‑H actively spinning it, the turbo spools up more slowly (visible turbo lag).</p>
+    </div>
+
+    <!-- DIFFERENTIAL PANEL -->
+    <div class="panel" data-mod="diff">
+      <div class="kicker">02 · Drivetrain</div>
+      <h2>Differential</h2>
+      <p class="desc">A bevel‑gear differential lets the two driven wheels rotate at different speeds while still sharing torque from a single input shaft — essential once the outer wheel has to travel further than the inner wheel through a corner.</p>
+
+      <div class="field">
+        <div class="field-row"><label>Driveshaft speed</label><span class="val" id="diff-rpm-val">4,000 rpm</span></div>
+        <input type="range" id="diff-rpm" min="0" max="8000" step="50" value="4000">
+      </div>
+
+      <div class="field">
+        <div class="field-row"><label>Cornering bias</label><span class="val" id="diff-corner-val">0% (straight)</span></div>
+        <input type="range" id="diff-corner" min="-100" max="100" step="1" value="0">
+      </div>
+
+      <div class="readout-grid">
+        <div class="readout"><div class="label">Carrier / ring</div><div class="num" id="diff-carrier-rpm">—<span class="unit">rpm</span></div></div>
+        <div class="readout"><div class="label">Ratio</div><div class="num" id="diff-ratio">3.40<span class="unit">:1</span></div></div>
+        <div class="readout"><div class="label">Left wheel</div><div class="num accent" id="diff-left-rpm">—<span class="unit">rpm</span></div></div>
+        <div class="readout"><div class="label">Right wheel</div><div class="num accent" id="diff-right-rpm">—<span class="unit">rpm</span></div></div>
+      </div>
+
+      <p class="note">Set cornering bias to 0 and the two spider (planet) gears just orbit without spinning on their own pin — no speed difference needed. Push the slider either way and they start rotating on the pin, feeding extra speed to the outer wheel and taking it from the inner one. <b>Note:</b> real F1 differentials are multi‑plate limited‑slip units, but they're built around this same bevel‑gear principle.</p>
+    </div>
+
+    <!-- STEERING PANEL -->
+    <div class="panel" data-mod="steer">
+      <div class="kicker">03 · Chassis</div>
+      <h2>Steering Geometry</h2>
+      <p class="desc">F1 cars steer with the <b>front wheels only</b>, through a rack‑and‑pinion system — there is no four‑wheel steering. The rack is pushed sideways, tie‑rods pull each wheel's steering arm, and Ackermann geometry makes the inner wheel turn a sharper angle than the outer one.</p>
+
+      <div class="field">
+        <div class="field-row"><label>Steering input</label><span class="val" id="steer-angle-val">0°</span></div>
+        <input type="range" id="steer-angle" min="-30" max="30" step="0.5" value="0">
+      </div>
+
+      <div class="readout-grid">
+        <div class="readout"><div class="label">Inner wheel</div><div class="num accent" id="steer-inner">—°</div></div>
+        <div class="readout"><div class="label">Outer wheel</div><div class="num accent" id="steer-outer">—°</div></div>
+        <div class="readout"><div class="label">Turn radius</div><div class="num" id="steer-radius">—<span class="unit">m</span></div></div>
+        <div class="readout"><div class="label">Rear wheels</div><div class="num green">FIXED</div></div>
+      </div>
+
+      <p class="note">The thin lines from each front wheel meet at the <b>turn centre</b> on the extended rear‑axle line — that convergence is the definition of correct Ackermann geometry. Wheelbase and track are set to roughly current F1 proportions (≈3.6&nbsp;m / 1.6&nbsp;m) purely to get realistic‑looking angles.</p>
+    </div>
+
+    <!-- SUSPENSION PANEL -->
+    <div class="panel" data-mod="susp">
+      <div class="kicker">04 · Chassis</div>
+      <h2>Suspension — Damped Oscillator</h2>
+      <p class="desc">Each corner behaves like a mass on a spring and damper: m·x″&nbsp;+&nbsp;c·x′&nbsp;+&nbsp;k·x&nbsp;=&nbsp;F(t). The spring stores energy and resists compression; the damper bleeds energy off so the car settles instead of bouncing forever.</p>
+
+      <div class="field">
+        <div class="field-row"><label>Spring rate (k)</label><span class="val" id="susp-k-val">55</span></div>
+        <input type="range" id="susp-k" min="15" max="120" step="1" value="55">
+      </div>
+      <div class="field">
+        <div class="field-row"><label>Damping (c)</label><span class="val" id="susp-c-val">7.0</span></div>
+        <input type="range" id="susp-c" min="0" max="25" step="0.2" value="7">
+      </div>
+      <div class="field">
+        <div class="field-row"><label>Corner mass (m)</label><span class="val" id="susp-m-val">1.0</span></div>
+        <input type="range" id="susp-m" min="0.4" max="2.5" step="0.05" value="1">
+      </div>
+
+      <div class="switch-row">
+        <label>Washboard road</label>
+        <div class="switch" id="susp-road-switch"><div class="knob"></div></div>
+      </div>
+      <div class="btn-row" style="margin-bottom:16px;">
+        <button class="btn active" id="susp-bump" style="flex:none;padding:9px 18px;">Hit a bump</button>
+      </div>
+
+      <div class="readout-grid">
+        <div class="readout"><div class="label">Natural freq</div><div class="num" id="susp-wn">—<span class="unit">Hz</span></div></div>
+        <div class="readout"><div class="label">Damping ratio ζ</div><div class="num" id="susp-zeta">—</div></div>
+        <div class="readout" style="grid-column:1/3;"><div class="label">Regime</div><div class="num amber" id="susp-class">—</div></div>
+      </div>
+
+      <div class="field" style="margin-top:14px;">
+        <div class="field-row"><label>Displacement x(t)</label><span class="val" id="susp-x-val">0.00</span></div>
+        <canvas id="scope" width="600" height="240"></canvas>
+      </div>
+      <p class="note">ζ&nbsp;&lt;&nbsp;1 rings before settling (underdamped), ζ&nbsp;=&nbsp;1 returns fastest without ringing (critical), ζ&nbsp;&gt;&nbsp;1 returns slowly without ringing (overdamped). Real F1 dampers are tuned well underdamped so the tyre can follow the track surface instead of being locked rigid.</p>
+    </div>
+
+  </div>
+</aside>
+
+<div class="legend">
+  <span><i style="background:var(--red)"></i>Combustion / mechanical</span>
+  <span><i style="background:var(--cyan)"></i>Electric / hybrid</span>
+</div>
+<div class="hint"><b>Drag</b> to orbit · <b>scroll</b> to zoom</div>
+
+<script>
+'use strict';
+
+/* ======================================================================
+   UTILITIES
+   ====================================================================== */
+const TAU = Math.PI*2;
+function lerp(a,b,t){return a+(b-a)*t;}
+function clamp(v,lo,hi){return Math.min(hi,Math.max(lo,v));}
+function easeInOutCubic(t){return t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;}
+
+function makeLabelSprite(text,color){
+  const canvas=document.createElement('canvas');
+  const ctx=canvas.getContext('2d');
+  const scale=64;
+  ctx.font='600 '+ (28) +'px Rajdhani, sans-serif';
+  const w=Math.ceil(ctx.measureText(text).width)+28;
+  canvas.width=w; canvas.height=40;
+  const ctx2=canvas.getContext('2d');
+  ctx2.font='600 22px Rajdhani, sans-serif';
+  ctx2.fillStyle='rgba(6,8,11,0.72)';
+  ctx2.fillRect(0,0,canvas.width,canvas.height);
+  ctx2.strokeStyle=color||'#e10600';
+  ctx2.lineWidth=1;
+  ctx2.strokeRect(0.5,0.5,canvas.width-1,canvas.height-1);
+  ctx2.fillStyle='#eef2f6';
+  ctx2.textBaseline='middle';
+  ctx2.fillText(text,14,21);
+  const tex=new THREE.CanvasTexture(canvas);
+  tex.minFilter=THREE.LinearFilter;
+  const mat=new THREE.SpriteMaterial({map:tex,depthTest:false,transparent:true});
+  const sprite=new THREE.Sprite(mat);
+  const aspect=canvas.width/canvas.height;
+  const h=0.34;
+  sprite.scale.set(h*aspect,h,1);
+  sprite.renderOrder=999;
+  return sprite;
+}
+
+function updateStrut(mesh,p1,p2){
+  const dir=new THREE.Vector3().subVectors(p2,p1);
+  const len=dir.length();
+  const mid=new THREE.Vector3().addVectors(p1,p2).multiplyScalar(0.5);
+  mesh.position.copy(mid);
+  const base=mesh.userData.baseLength||1;
+  mesh.scale.y=Math.max(0.001,len/base);
+  if(len>1e-5){
+    dir.normalize();
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir);
+  }
+}
+
+function addGearTeeth(group,radius,count,size,color,axis){
+  // axis: 'y' teeth ring lying in XZ plane (default), 'x' ring lying in YZ plane
+  const mat=new THREE.MeshStandardMaterial({color:color,metalness:0.75,roughness:0.35});
+  for(let i=0;i<count;i++){
+    const a=(i/count)*TAU;
+    const tooth=new THREE.Mesh(new THREE.BoxGeometry(size,size*1.4,size*0.9),mat);
+    if(axis==='x'){
+      tooth.position.set(0,Math.cos(a)*radius,Math.sin(a)*radius);
+      tooth.rotation.x=a;
+    } else {
+      tooth.position.set(Math.cos(a)*radius,0,Math.sin(a)*radius);
+      tooth.rotation.y=-a;
+    }
+    group.add(tooth);
+  }
+}
+
+/* ======================================================================
+   THREE.JS CORE SETUP
+   ====================================================================== */
+let scene, camera, renderer, clock;
+const wrap=document.getElementById('canvas-wrap');
+
+function initThree(){
+  scene=new THREE.Scene();
+  scene.background=new THREE.Color(0x05070a);
+  scene.fog=new THREE.FogExp2(0x05070a,0.045);
+
+  camera=new THREE.PerspectiveCamera(42, window.innerWidth/window.innerHeight, 0.05, 100);
+
+  renderer=new THREE.WebGLRenderer({antialias:true});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+  renderer.setSize(window.innerWidth,window.innerHeight);
+  renderer.shadowMap.enabled=false;
+  wrap.appendChild(renderer.domElement);
+
+  const ambient=new THREE.AmbientLight(0x3b4a5c,0.65);
+  scene.add(ambient);
+  const key=new THREE.DirectionalLight(0xffffff,1.05);
+  key.position.set(4,6,3);
+  scene.add(key);
+  const fill=new THREE.DirectionalLight(0x2266ff,0.35);
+  fill.position.set(-5,2,-4);
+  scene.add(fill);
+  const rim=new THREE.PointLight(0xe10600,0.6,10);
+  rim.position.set(-2,1.5,-2);
+  scene.add(rim);
+  const rim2=new THREE.PointLight(0x00e0ff,0.4,10);
+  rim2.position.set(2,1,2.5);
+  scene.add(rim2);
+
+  // ground
+  const groundGeo=new THREE.CircleGeometry(9,64);
+  const groundMat=new THREE.MeshStandardMaterial({color:0x0b0e13,metalness:0.2,roughness:0.9});
+  const ground=new THREE.Mesh(groundGeo,groundMat);
+  ground.rotation.x=-Math.PI/2;
+  ground.position.y=-0.001;
+  scene.add(ground);
+
+  const grid=new THREE.GridHelper(18,36,0x2a323d,0x161b22);
+  grid.position.y=0;
+  scene.add(grid);
+
+  clock=new THREE.Clock();
+  window.addEventListener('resize',onResize);
+}
+
+function onResize(){
+  camera.aspect=window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth,window.innerHeight);
+}
+
+/* ---------------- custom orbit camera ---------------- */
+const camState={theta:0.6,phi:1.15,radius:6.5,target:new THREE.Vector3(0,0.9,0)};
+let transitioning=false, transT=0, transDur=0.85;
+let transStart=null, transGoal=null;
+
+function applyCamera(){
+  const p=camState;
+  camera.position.x=p.target.x + p.radius*Math.sin(p.phi)*Math.sin(p.theta);
+  camera.position.z=p.target.z + p.radius*Math.sin(p.phi)*Math.cos(p.theta);
+  camera.position.y=p.target.y + p.radius*Math.cos(p.phi);
+  camera.lookAt(p.target);
+}
+
+function goToModule(key){
+  activeModule=key;
+  const goal=modules[key].cam;
+  transStart={theta:camState.theta,phi:camState.phi,radius:camState.radius,target:camState.target.clone()};
+  transGoal={theta:goal.theta,phi:goal.phi,radius:goal.radius,target:goal.target.clone()};
+  transT=0; transitioning=true;
+  Object.keys(modules).forEach(k=>{ modules[k].group.visible = (k===key); });
+  document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.dataset.mod===key));
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.dataset.mod===key));
+}
+
+let isDragging=false, lastX=0, lastY=0;
+function setupPointerControls(el){
+  el.addEventListener('pointerdown',e=>{
+    isDragging=true; lastX=e.clientX; lastY=e.clientY; transitioning=false;
+    el.setPointerCapture(e.pointerId);
+  });
+  el.addEventListener('pointermove',e=>{
+    if(!isDragging) return;
+    const dx=e.clientX-lastX, dy=e.clientY-lastY;
+    lastX=e.clientX; lastY=e.clientY;
+    camState.theta -= dx*0.0065;
+    camState.phi = clamp(camState.phi - dy*0.0065, 0.25, Math.PI-0.2);
+  });
+  window.addEventListener('pointerup',()=>{isDragging=false;});
+  el.addEventListener('wheel',e=>{
+    e.preventDefault();
+    transitioning=false;
+    camState.radius=clamp(camState.radius*(1+e.deltaY*0.0012), 2.2, 14);
+  },{passive:false});
+}
+
+/* ======================================================================
+   MODULE 1 — ENGINE
+   ====================================================================== */
+function buildEngine(){
+  const group=new THREE.Group();
+
+  const P={
+    rpm:9000,
+    mguMode:1,          // -1 harvest, 0 neutral, 1 deploy
+    battery:55,
+    era:'2026',
+    crankAngle:0,
+    turboSpin:0,
+  };
+
+  const ERA={
+    '2026':{mguH:false, mgukKw:350, iceKw:400, lagRate:1.1, label:'Era: 2026–present'},
+    'legacy':{mguH:true, mgukKw:120, iceKw:550, lagRate:6.0, label:'Era: 2014–2025'}
+  };
+
+  const VISUAL_SLOW=0.022;
+  const bankAngle=Math.PI/4;
+  const crankY=0.55;
+  const rodLength=0.95;
+  const pinRadius=0.28;
+  const cylSpacingZ=0.44;
+
+  const blockMat=new THREE.MeshStandardMaterial({color:0x262b33,metalness:0.55,roughness:0.5});
+  const block=new THREE.Mesh(new THREE.BoxGeometry(1.55,0.42,1.55),blockMat);
+  block.position.set(0,crankY,0);
+  group.add(block);
+
+  const sumpMat=new THREE.MeshStandardMaterial({color:0x1b1f26,metalness:0.4,roughness:0.6});
+  const sump=new THREE.Mesh(new THREE.BoxGeometry(1.2,0.18,1.4),sumpMat);
+  sump.position.set(0,crankY-0.28,0);
+  group.add(sump);
+
+  const crankMat=new THREE.MeshStandardMaterial({color:0x99a2ad,metalness:0.9,roughness:0.22});
+  const crankPivot=new THREE.Group();
+  crankPivot.position.set(0,crankY,0);
+  crankPivot.rotation.x=Math.PI/2;
+  group.add(crankPivot);
+  const crankShaft=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,1.55,16),crankMat);
+  crankPivot.add(crankShaft);
+
+  const pins=[-1,0,1].map((i)=>({z:i*cylSpacingZ, phase:(i)*(TAU/3)}));
+  const pinMeshes=pins.map(()=>{
+    const m=new THREE.Mesh(new THREE.SphereGeometry(0.065,12,12),crankMat);
+    group.add(m); return m;
+  });
+
+  const sleeveMat=new THREE.MeshStandardMaterial({color:0x3a4048,metalness:0.4,roughness:0.4,transparent:true,opacity:0.32,side:THREE.DoubleSide});
+  const pistonMat=new THREE.MeshStandardMaterial({color:0xd8dde3,metalness:0.75,roughness:0.3});
+  const rodMat=new THREE.MeshStandardMaterial({color:0x8b93a0,metalness:0.85,roughness:0.3});
+
+  const banks=[-1,1].map(sideSign=>{
+    const tilt=sideSign*bankAngle;
+    return {sign:sideSign, tilt, dirX:Math.sin(tilt), dirY:Math.cos(tilt), perpX:Math.cos(tilt), perpY:-Math.sin(tilt)};
+  });
+
+  const units=[]; // {pin, bank, sleeve, piston, rod}
+  pins.forEach(pin=>{
+    banks.forEach(bank=>{
+      const sleeve=new THREE.Mesh(new THREE.CylinderGeometry(0.165,0.165,1.05,16,1,true),sleeveMat);
+      sleeve.position.set(bank.dirX*0.78, crankY+bank.dirY*0.78, pin.z);
+      sleeve.rotation.z=-bank.tilt;
+      group.add(sleeve);
+
+      const piston=new THREE.Mesh(new THREE.CylinderGeometry(0.155,0.155,0.22,16),pistonMat);
+      group.add(piston);
+
+      const rod=new THREE.Mesh(new THREE.CylinderGeometry(0.042,0.042,rodLength,10),rodMat);
+      rod.userData.baseLength=rodLength;
+      group.add(rod);
+
+      units.push({pin,bank,sleeve,piston,rod});
+    });
+  });
+
+  // turbocharger assembly
+  const turboGroup=new THREE.Group();
+  turboGroup.position.set(1.35,crankY+0.15,0.85);
+  turboGroup.rotation.z=Math.PI/2;
+  group.add(turboGroup);
+  const housingMat=new THREE.MeshStandardMaterial({color:0x4a5566,metalness:0.85,roughness:0.25});
+  const compHousing=new THREE.Mesh(new THREE.SphereGeometry(0.16,16,16),housingMat);
+  compHousing.position.set(0.22,0,0);
+  turboGroup.add(compHousing);
+  const turbHousing=new THREE.Mesh(new THREE.SphereGeometry(0.16,16,16),new THREE.MeshStandardMaterial({color:0x5a4030,metalness:0.8,roughness:0.35}));
+  turbHousing.position.set(-0.22,0,0);
+  turboGroup.add(turbHousing);
+  const shaftMat=new THREE.MeshStandardMaterial({color:0xcccccc,metalness:0.9,roughness:0.2});
+  const turboShaft=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.5,10),shaftMat);
+  turboShaft.rotation.z=Math.PI/2;
+  turboGroup.add(turboShaft);
+  const mguHMesh=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,0.16,14),new THREE.MeshStandardMaterial({color:0x00e0ff,emissive:0x0a3a44,metalness:0.6,roughness:0.35}));
+  mguHMesh.rotation.z=Math.PI/2;
+  turboGroup.add(mguHMesh);
+  const spinGroup=new THREE.Group();
+  turboGroup.add(spinGroup);
+  function blades(parent,color){
+    const bg=new THREE.Group();
+    for(let i=0;i<7;i++){
+      const a=(i/7)*TAU;
+      const b=new THREE.Mesh(new THREE.BoxGeometry(0.11,0.02,0.045),new THREE.MeshStandardMaterial({color:color,metalness:0.7,roughness:0.3}));
+      b.position.set(Math.cos(a)*0.08,Math.sin(a)*0.08,0);
+      b.rotation.z=a;
+      bg.add(b);
+    }
+    parent.add(bg);
+    return bg;
+  }
+  const compBlades=blades(compHousing,0xbfc6d1); compBlades.rotation.y=Math.PI/2;
+  const turbBlades=blades(turbHousing,0x8a6a4a); turbBlades.rotation.y=Math.PI/2;
+
+  // MGU-K on crank end
+  const mgukMat=new THREE.MeshStandardMaterial({color:0x0f2933,emissive:0x00e0ff,emissiveIntensity:0.25,metalness:0.6,roughness:0.35});
+  const mguk=new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,0.32,20),mgukMat);
+  mguk.rotation.x=Math.PI/2;
+  mguk.position.set(0,crankY,0.95);
+  group.add(mguk);
+
+  // battery / energy store
+  const battMat=new THREE.MeshStandardMaterial({color:0x111820,emissive:0x00e0ff,emissiveIntensity:0.12,metalness:0.4,roughness:0.5});
+  const batt=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.28,0.9),battMat);
+  batt.position.set(-1.25,crankY,0);
+  group.add(batt);
+
+  // labels
+  const lblICE=makeLabelSprite('ICE · V6 1.6L Turbo','#e10600');
+  lblICE.position.set(0,crankY+1.15,0);
+  group.add(lblICE);
+  const lblTurbo=makeLabelSprite('Turbocharger','#ffb020');
+  lblTurbo.position.set(1.35,crankY+0.6,0.85);
+  group.add(lblTurbo);
+  const lblMguk=makeLabelSprite('MGU-K','#00e0ff');
+  lblMguk.position.set(0,crankY+0.35,1.35);
+  group.add(lblMguk);
+  const lblBatt=makeLabelSprite('Energy Store (ES)','#00e0ff');
+  lblBatt.position.set(-1.25,crankY+0.35,0);
+  group.add(lblBatt);
+  const lblMguH=makeLabelSprite('MGU-H (2014–25 only)','#00e0ff');
+  lblMguH.position.set(1.35,crankY-0.28,0.85);
+  group.add(lblMguH);
+
+  function update(dt){
+    const era=ERA[P.era];
+    const rpmFrac=(P.rpm-3000)/(15000-3000);
+
+    P.crankAngle += (P.rpm/60)*TAU*VISUAL_SLOW*dt;
+    crankShaft.rotation.y=P.crankAngle;
+
+    pins.forEach((pin,i)=>{
+      const a=P.crankAngle+pin.phase;
+      const px=pinRadius*Math.sin(a);
+      const py=-pinRadius*Math.cos(a);
+      pinMeshes[i].position.set(px,crankY+py,pin.z);
+    });
+
+    units.forEach(u=>{
+      const a=P.crankAngle+u.pin.phase;
+      const px=pinRadius*Math.sin(a);
+      const py=-pinRadius*Math.cos(a);
+      const bank=u.bank;
+      const pPar=px*bank.dirX+py*bank.dirY;
+      const pPerp=px*bank.perpX+py*bank.perpY;
+      const s=pPar+Math.sqrt(Math.max(0,rodLength*rodLength-pPerp*pPerp));
+      const wx=bank.dirX*s, wy=crankY+bank.dirY*s;
+      u.piston.position.set(wx,wy,u.pin.z);
+      u.piston.rotation.z=-bank.tilt;
+      const pinWorld=new THREE.Vector3(px,crankY+py,u.pin.z);
+      const wristWorld=new THREE.Vector3(wx,wy,u.pin.z);
+      updateStrut(u.rod,pinWorld,wristWorld);
+    });
+
+    // turbo spool
+    const turboTarget=rpmFrac*26;
+    P.turboSpin += (turboTarget-P.turboSpin)*Math.min(1,dt*era.lagRate);
+    spinGroup.rotation.x += 0;
+    compHousing.rotation.x += P.turboSpin*dt;
+    turbHousing.rotation.x += P.turboSpin*dt;
+    mguHMesh.visible=era.mguH;
+    lblMguH.visible=era.mguH;
+    turboShaft.rotation.x += P.turboSpin*dt;
+
+    // MGU-K glow + battery
+    const modeTarget = P.mguMode===1?0.9:(P.mguMode===-1?0.55:0.15);
+    mgukMat.emissiveIntensity += (modeTarget-mgukMat.emissiveIntensity)*Math.min(1,dt*4);
+    mguk.rotation.z=P.crankAngle;
+    if(P.mguMode===1) P.battery=clamp(P.battery-dt*6,0,100);
+    else if(P.mguMode===-1) P.battery=clamp(P.battery+dt*5,0,100);
+    battMat.emissiveIntensity=0.06+ (P.battery/100)*0.22;
+
+    // readouts
+    const iceKw = era.iceKw*Math.pow(Math.max(0,rpmFrac),0.85);
+    const mgukKw = P.mguMode*era.mgukKw*(P.mguMode===-1?Math.min(1,rpmFrac+0.3):1);
+    const combined = iceKw + Math.max(0,mgukKw);
+    document.getElementById('eng-ice-kw').innerHTML=iceKw.toFixed(0)+'<span class="unit">kW</span>';
+    document.getElementById('eng-mguk-kw').innerHTML=mgukKw.toFixed(0)+'<span class="unit">kW</span>';
+    document.getElementById('eng-total-kw').innerHTML=combined.toFixed(0)+'<span class="unit">kW</span>';
+    document.getElementById('eng-turbo-pct').innerHTML=clamp((P.turboSpin/26)*100,0,100).toFixed(0)+'<span class="unit">%</span>';
+    document.getElementById('eng-batt-val').textContent=P.battery.toFixed(0)+'%';
+    document.getElementById('eng-batt-bar').style.width=P.battery.toFixed(0)+'%';
+  }
+
+  return {
+    group, update, params:P, ERA,
+    cam:{theta:0.55,phi:1.2,radius:5.4,target:new THREE.Vector3(0,crankY+0.3,0)}
+  };
+}
+
+/* ======================================================================
+   MODULE 2 — DIFFERENTIAL
+   ====================================================================== */
+function buildDifferential(){
+  const group=new THREE.Group();
+  const P={pinionRpm:4000, corner:0, ratio:3.4, carrierAngle:0, leftAngle:0, rightAngle:0, spiderSpin:0};
+
+  const axleY=0.5;
+  const metalDark=new THREE.MeshStandardMaterial({color:0x2a2f38,metalness:0.7,roughness:0.35});
+  const metalLight=new THREE.MeshStandardMaterial({color:0x9aa2ad,metalness:0.85,roughness:0.25});
+  const rubber=new THREE.MeshStandardMaterial({color:0x14161a,roughness:0.9});
+
+  // driveshaft (Z axis) + pinion
+  const shaftMat=metalLight;
+  const driveshaft=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,1.5,14),shaftMat);
+  driveshaft.rotation.x=Math.PI/2;
+  driveshaft.position.set(0,axleY,-1.35);
+  group.add(driveshaft);
+
+  const pinionGroup=new THREE.Group();
+  pinionGroup.position.set(0,axleY,-0.55);
+  group.add(pinionGroup);
+  const pinionCone=new THREE.Mesh(new THREE.ConeGeometry(0.22,0.34,14),metalDark);
+  pinionCone.rotation.x=Math.PI/2;
+  pinionGroup.add(pinionCone);
+
+  // carrier / ring gear (rotates about X axis)
+  const carrier=new THREE.Group();
+  carrier.position.set(0,axleY,0);
+  group.add(carrier);
+  const ringDisc=new THREE.Mesh(new THREE.CylinderGeometry(0.62,0.62,0.09,28),metalDark);
+  ringDisc.rotation.z=Math.PI/2;
+  carrier.add(ringDisc);
+  addGearTeeth(carrier,0.62,26,0.06,0x555f6b,'x');
+
+  const crossPin=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,0.62,10),metalLight);
+  carrier.add(crossPin);
+
+  const spiderMat=metalLight;
+  const spider1=new THREE.Group(); spider1.position.set(0,0.31,0); carrier.add(spider1);
+  const spider2=new THREE.Group(); spider2.position.set(0,-0.31,0); carrier.add(spider2);
+  [spider1,spider2].forEach(s=>{
+    const cone=new THREE.Mesh(new THREE.ConeGeometry(0.15,0.24,12),spiderMat);
+    cone.rotation.x= s===spider1? Math.PI : 0;
+    s.add(cone);
+  });
+
+  // side gears + half shafts + wheels
+  function buildWheelSide(sign){
+    const sideGroup=new THREE.Group();
+    sideGroup.position.set(sign*0.42,axleY,0);
+    group.add(sideGroup);
+    const sideCone=new THREE.Mesh(new THREE.ConeGeometry(0.19,0.28,14),metalDark);
+    sideCone.rotation.z= sign>0? Math.PI/2 : -Math.PI/2;
+    sideGroup.add(sideCone);
+
+    const shaft=new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.055,1.15,12),metalLight);
+    shaft.rotation.z=Math.PI/2;
+    shaft.position.set(sign*0.98,axleY,0);
+    group.add(shaft);
+
+    const wheelGroup=new THREE.Group();
+    wheelGroup.position.set(sign*1.62,axleY,0);
+    group.add(wheelGroup);
+    const tire=new THREE.Mesh(new THREE.TorusGeometry(0.34,0.13,12,24),rubber);
+    tire.rotation.y=Math.PI/2;
+    wheelGroup.add(tire);
+    const hub=new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.15,0.16,16),metalLight);
+    hub.rotation.z=Math.PI/2;
+    wheelGroup.add(hub);
+
+    return {sideGroup, shaft, wheelGroup};
+  }
+  const leftSide=buildWheelSide(-1);
+  const rightSide=buildWheelSide(1);
+
+  const lblRing=makeLabelSprite('Ring gear + carrier','#e10600');
+  lblRing.position.set(0,axleY+1.0,0);
+  group.add(lblRing);
+  const lblPinion=makeLabelSprite('Pinion (from gearbox)','#8a93a3');
+  lblPinion.position.set(0,axleY+0.55,-1.0);
+  group.add(lblPinion);
+  const lblSpider=makeLabelSprite('Spider gears','#ffb020');
+  lblSpider.position.set(0,axleY+0.65,0.55);
+  group.add(lblSpider);
+
+  function update(dt){
+    const c=clamp(P.corner,-1,1);
+    const carrierRpm=P.pinionRpm/P.ratio;
+    const leftRpm=carrierRpm*(1-c);
+    const rightRpm=carrierRpm*(1+c);
+    const SLOW=0.04;
+
+    driveshaft.rotation.y+= (P.pinionRpm/60)*TAU*SLOW*dt*0.6;
+    pinionCone.rotation.z+= (P.pinionRpm/60)*TAU*SLOW*dt*0.6;
+
+    P.carrierAngle+=(carrierRpm/60)*TAU*SLOW*dt;
+    carrier.rotation.x=P.carrierAngle;
+
+    P.spiderSpin += ((rightRpm-leftRpm)/2/60)*TAU*SLOW*dt*2.2;
+    spider1.rotation.y=P.spiderSpin;
+    spider2.rotation.y=P.spiderSpin;
+
+    P.leftAngle+=(leftRpm/60)*TAU*SLOW*dt;
+    P.rightAngle+=(rightRpm/60)*TAU*SLOW*dt;
+    leftSide.sideGroup.rotation.x=P.leftAngle;
+    leftSide.shaft.rotation.x=P.leftAngle;
+    leftSide.wheelGroup.rotation.x=P.leftAngle;
+    rightSide.sideGroup.rotation.x=P.rightAngle;
+    rightSide.shaft.rotation.x=P.rightAngle;
+    rightSide.wheelGroup.rotation.x=P.rightAngle;
+
+    document.getElementById('diff-carrier-rpm').textContent=carrierRpm.toFixed(0);
+    document.getElementById('diff-left-rpm').textContent=leftRpm.toFixed(0);
+    document.getElementById('diff-right-rpm').textContent=rightRpm.toFixed(0);
+  }
+
+  return {
+    group, update, params:P,
+    cam:{theta:0.9,phi:1.25,radius:5.6,target:new THREE.Vector3(0,axleY+0.1,0)}
+  };
+}
+
+/* ======================================================================
+   MODULE 3 — STEERING
+   ====================================================================== */
+function buildSteering(){
+  const group=new THREE.Group();
+  const P={angleDeg:0};
+  const PHYS={wheelbase:3.6, track:1.6};
+  const SCENE_SCALE=0.42;
+
+  const metalDark=new THREE.MeshStandardMaterial({color:0x2a2f38,metalness:0.7,roughness:0.35});
+  const metalLight=new THREE.MeshStandardMaterial({color:0x9aa2ad,metalness:0.85,roughness:0.25});
+  const rubber=new THREE.MeshStandardMaterial({color:0x14161a,roughness:0.9});
+  const accentMat=new THREE.MeshStandardMaterial({color:0xe10600,metalness:0.5,roughness:0.4});
+
+  const halfWb=PHYS.wheelbase*SCENE_SCALE/2;
+  const halfTw=PHYS.track*SCENE_SCALE/2;
+  const wheelY=0.34;
+
+  // simple chassis reference
+  const chassis=new THREE.Mesh(new THREE.BoxGeometry(halfTw*1.5,0.16,halfWb*2.1),new THREE.MeshStandardMaterial({color:0x14181f,metalness:0.4,roughness:0.6,transparent:true,opacity:0.55}));
+  chassis.position.set(0,0.62,0);
+  group.add(chassis);
+
+  function buildWheel(){
+    const g=new THREE.Group();
+    const tire=new THREE.Mesh(new THREE.TorusGeometry(0.33,0.13,12,22),rubber);
+    tire.rotation.y=Math.PI/2;
+    g.add(tire);
+    const hub=new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.14,0.15,14),metalLight);
+    hub.rotation.z=Math.PI/2;
+    g.add(hub);
+    const roll=new THREE.Group(); roll.add(g);
+    return {roll, spinTarget:g};
+  }
+
+  function buildFrontCorner(sign){
+    const pivot=new THREE.Group();
+    pivot.position.set(sign*halfTw, wheelY, halfWb);
+    group.add(pivot);
+    const w=buildWheel();
+    pivot.add(w.roll);
+    // steering arm point (local, before rotation)
+    const armLocal=new THREE.Vector3(-sign*0.22,0,-0.14);
+    const armMarker=new THREE.Mesh(new THREE.SphereGeometry(0.04,8,8),accentMat);
+    armMarker.position.copy(armLocal);
+    pivot.add(armMarker);
+    return {pivot, roll:w.roll, armLocal, armMarker};
+  }
+  const frontL=buildFrontCorner(-1);
+  const frontR=buildFrontCorner(1);
+
+  function buildRearCorner(sign){
+    const g=new THREE.Group();
+    g.position.set(sign*halfTw, wheelY, -halfWb);
+    group.add(g);
+    const w=buildWheel();
+    g.add(w.roll);
+    return {group:g, roll:w.roll};
+  }
+  const rearL=buildRearCorner(-1);
+  const rearR=buildRearCorner(1);
+
+  // rack + pinion
+  const rack=new THREE.Mesh(new THREE.BoxGeometry(halfTw*1.7,0.06,0.09),metalLight);
+  rack.position.set(0,0.5,halfWb-0.35);
+  group.add(rack);
+  const pinionMesh=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,0.14,12),metalDark);
+  pinionMesh.position.set(0,0.58,halfWb-0.35);
+  group.add(pinionMesh);
+  addGearTeeth(pinionMesh,0.09,10,0.03,0x555f6b,'y');
+
+  const columnGroup=new THREE.Group();
+  columnGroup.position.set(0,0.58,halfWb-0.35);
+  group.add(columnGroup);
+  const column=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.55,10),metalLight);
+  column.position.set(0,0.22,0.16);
+  column.rotation.x=-0.5;
+  columnGroup.add(column);
+  const wheelRing=new THREE.Mesh(new THREE.TorusGeometry(0.16,0.02,8,20),accentMat);
+  wheelRing.position.set(0,0.42,0.34);
+  wheelRing.rotation.x=Math.PI/2-0.5;
+  columnGroup.add(wheelRing);
+
+  // tie rods
+  const tieMat=new THREE.MeshStandardMaterial({color:0x8b93a0,metalness:0.8,roughness:0.3});
+  const tieL=new THREE.Mesh(new THREE.CylinderGeometry(0.028,0.028,1,8),tieMat);
+  tieL.userData.baseLength=1;
+  group.add(tieL);
+  const tieR=new THREE.Mesh(new THREE.CylinderGeometry(0.028,0.028,1,8),tieMat);
+  tieR.userData.baseLength=1;
+  group.add(tieR);
+
+  // turn-centre guide
+  const guideMat=new THREE.LineBasicMaterial({color:0x00e0ff,transparent:true,opacity:0.55});
+  const guideGeoL=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3()]);
+  const guideL=new THREE.Line(guideGeoL,guideMat); group.add(guideL);
+  const guideGeoR=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3()]);
+  const guideR=new THREE.Line(guideGeoR,guideMat); group.add(guideR);
+  const icMarker=new THREE.Mesh(new THREE.RingGeometry(0.05,0.08,16),new THREE.MeshBasicMaterial({color:0x00e0ff,side:THREE.DoubleSide,transparent:true,opacity:0.85}));
+  icMarker.rotation.x=-Math.PI/2;
+  group.add(icMarker);
+
+  const lblFront=makeLabelSprite('Front — steered','#e10600');
+  lblFront.position.set(0,wheelY+0.9,halfWb);
+  group.add(lblFront);
+  const lblRear=makeLabelSprite('Rear — fixed','#3ddc84');
+  lblRear.position.set(0,wheelY+0.7,-halfWb);
+  group.add(lblRear);
+
+  let rollAngle=0;
+
+  function update(dt){
+    const deg=P.angleDeg;
+    const delta=deg*Math.PI/180;
+    let innerAngle=0, outerAngle=0, R=Infinity;
+    let leftAngle=0, rightAngle=0;
+    if(Math.abs(delta)>0.001){
+      R=PHYS.wheelbase/Math.tan(Math.abs(delta));
+      const Rin=R-PHYS.track/2, Rout=R+PHYS.track/2;
+      innerAngle=Math.atan(PHYS.wheelbase/Rin);
+      outerAngle=Math.atan(PHYS.wheelbase/Rout);
+      const sign=Math.sign(delta);
+      if(sign>0){ rightAngle=sign*innerAngle; leftAngle=sign*outerAngle; }
+      else { leftAngle=sign*innerAngle; rightAngle=sign*outerAngle; }
+    }
+    frontL.pivot.rotation.y=leftAngle;
+    frontR.pivot.rotation.y=rightAngle;
+
+    rollAngle += 1.6*dt;
+    [frontL.roll,frontR.roll,rearL.roll,rearR.roll].forEach(r=>r.rotation.x=rollAngle);
+
+    // rack + column + tie rods
+    const rackOffset=clamp(delta*0.5,-0.3,0.3);
+    rack.position.x=rackOffset;
+    pinionMesh.rotation.z=rackOffset*6;
+    columnGroup.rotation.y=delta*3;
+
+    const rackLeftEnd=new THREE.Vector3(rack.position.x-halfTw*0.75,0.5,rack.position.z);
+    const rackRightEnd=new THREE.Vector3(rack.position.x+halfTw*0.75,0.5,rack.position.z);
+    const armL=frontL.armLocal.clone().applyAxisAngle(new THREE.Vector3(0,1,0),leftAngle).add(frontL.pivot.position);
+    const armR=frontR.armLocal.clone().applyAxisAngle(new THREE.Vector3(0,1,0),rightAngle).add(frontR.pivot.position);
+    updateStrut(tieL,rackLeftEnd,armL);
+    updateStrut(tieR,rackRightEnd,armR);
+
+    // turn centre guides
+    if(Math.abs(delta)>0.001){
+      const sign=Math.sign(delta);
+      const icX=sign*R*SCENE_SCALE;
+      const ic=new THREE.Vector3(icX,0.01,-halfWb);
+      icMarker.position.copy(ic);
+      icMarker.visible=true;
+      guideL.geometry.setFromPoints([new THREE.Vector3(frontL.pivot.position.x,0.01,frontL.pivot.position.z),ic]);
+      guideR.geometry.setFromPoints([new THREE.Vector3(frontR.pivot.position.x,0.01,frontR.pivot.position.z),ic]);
+      guideL.visible=true; guideR.visible=true;
+    } else {
+      icMarker.visible=false; guideL.visible=false; guideR.visible=false;
+    }
+
+    document.getElementById('steer-inner').textContent=(innerAngle*180/Math.PI).toFixed(1)+'°';
+    document.getElementById('steer-outer').textContent=(outerAngle*180/Math.PI).toFixed(1)+'°';
+    document.getElementById('steer-radius').textContent=isFinite(R)?R.toFixed(1):'∞';
+  }
+
+  return {
+    group, update, params:P,
+    cam:{theta:0.5,phi:1.05,radius:6.4,target:new THREE.Vector3(0,0.45,0)}
+  };
+}
+
+/* ======================================================================
+   MODULE 4 — SUSPENSION
+   ====================================================================== */
+function buildSuspension(){
+  const group=new THREE.Group();
+  const P={k:55,c:7,m:1,x:0,v:0,roadOn:false,roadPhase:0};
+
+  const chassisY=2.15;
+  const restY=1.0;
+  const restLength=chassisY-restY;
+
+  const metalDark=new THREE.MeshStandardMaterial({color:0x2a2f38,metalness:0.7,roughness:0.35});
+  const metalLight=new THREE.MeshStandardMaterial({color:0x9aa2ad,metalness:0.85,roughness:0.25});
+  const rubber=new THREE.MeshStandardMaterial({color:0x14161a,roughness:0.9});
+  const springMat=new THREE.MeshStandardMaterial({color:0xffb020,metalness:0.6,roughness:0.35});
+
+  const chassisMesh=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.22,1.1),new THREE.MeshStandardMaterial({color:0x14181f,metalness:0.4,roughness:0.6}));
+  chassisMesh.position.set(0,chassisY+0.11,0);
+  group.add(chassisMesh);
+
+  // spring: helix tube built once at rest length, scaled dynamically
+  class HelixCurve extends THREE.Curve{
+    constructor(length,turns,radius){ super(); this.length=length; this.turns=turns; this.radius=radius; }
+    getPoint(t){
+      const a=t*this.turns*TAU;
+      return new THREE.Vector3(Math.cos(a)*this.radius, t*this.length, Math.sin(a)*this.radius);
+    }
+  }
+  const helix=new HelixCurve(restLength,7,0.22);
+  const springGeo=new THREE.TubeGeometry(helix,140,0.028,8,false);
+  const spring=new THREE.Mesh(springGeo,springMat);
+  spring.userData.restLength=restLength;
+  spring.position.set(0.35,restY,0);
+  group.add(spring);
+
+  // damper (outer sleeve fixed near top, inner rod telescopes)
+  const damperOuter=new THREE.Mesh(new THREE.CylinderGeometry(0.055,0.055,0.55,14),metalDark);
+  damperOuter.position.set(-0.35,chassisY-0.28,0);
+  group.add(damperOuter);
+  const damperInner=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,1,10),metalLight);
+  damperInner.userData.baseLength=1;
+  group.add(damperInner);
+
+  // wishbone-style struts (decorative)
+  const wbMat=new THREE.MeshStandardMaterial({color:0x555f6b,metalness:0.7,roughness:0.4});
+  const wbUpperPivot=new THREE.Vector3(0.75,chassisY-0.05,0.32);
+  const wbLowerPivot=new THREE.Vector3(0.8,restY-0.55,0.3);
+  const wbUpper=new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,1,8),wbMat);
+  wbUpper.userData.baseLength=1; group.add(wbUpper);
+  const wbLower=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,1,8),wbMat);
+  wbLower.userData.baseLength=1; group.add(wbLower);
+
+  // wheel assembly
+  const wheelGroup=new THREE.Group();
+  group.add(wheelGroup);
+  const tire=new THREE.Mesh(new THREE.TorusGeometry(0.38,0.15,14,26),rubber);
+  tire.rotation.y=Math.PI/2;
+  wheelGroup.add(tire);
+  const hub=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,0.18,16),metalLight);
+  hub.rotation.z=Math.PI/2;
+  wheelGroup.add(hub);
+  const upright=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.5,0.12),metalDark);
+  wheelGroup.add(upright);
+
+  // ground contact reference ring + equilibrium line
+  const eqLineGeo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-1.2,restY,0.6),new THREE.Vector3(1.2,restY,0.6)]);
+  const eqLine=new THREE.Line(eqLineGeo,new THREE.LineDashedMaterial({color:0x4d5763,dashSize:0.06,gapSize:0.05}));
+  eqLine.computeLineDistances();
+  group.add(eqLine);
+
+  const lblSpring=makeLabelSprite('Spring (k)','#ffb020');
+  lblSpring.position.set(0.35,chassisY+0.35,0);
+  group.add(lblSpring);
+  const lblDamper=makeLabelSprite('Damper (c)','#8a93a3');
+  lblDamper.position.set(-0.35,chassisY+0.35,0);
+  group.add(lblDamper);
+
+  // oscilloscope
+  const scopeCanvas=document.getElementById('scope');
+  const sctx=scopeCanvas.getContext('2d');
+  const history=[];
+  const HIST_LEN=220;
+
+  function drawScope(){
+    const w=scopeCanvas.width, h=scopeCanvas.height;
+    sctx.clearRect(0,0,w,h);
+    sctx.strokeStyle='rgba(255,255,255,0.08)';
+    sctx.lineWidth=1;
+    sctx.beginPath();
+    sctx.moveTo(0,h/2); sctx.lineTo(w,h/2);
+    sctx.stroke();
+    for(let gx=0;gx<w;gx+=w/8){
+      sctx.strokeStyle='rgba(255,255,255,0.04)';
+      sctx.beginPath(); sctx.moveTo(gx,0); sctx.lineTo(gx,h); sctx.stroke();
+    }
+    if(history.length<2) return;
+    sctx.strokeStyle='#00e0ff';
+    sctx.lineWidth=2;
+    sctx.beginPath();
+    const range=0.7;
+    for(let i=0;i<history.length;i++){
+      const px=(i/(HIST_LEN-1))*w;
+      const py=h/2-(history[i]/range)*(h/2-6);
+      if(i===0) sctx.moveTo(px,py); else sctx.lineTo(px,py);
+    }
+    sctx.stroke();
+  }
+
+  function update(dt){
+    const steps=4;
+    const h=Math.min(dt,0.05)/steps;
+    for(let i=0;i<steps;i++){
+      let F=0;
+      if(P.roadOn){ F=0.18*Math.sin(P.roadPhase); P.roadPhase+=6.0*h*TAU*0.15; }
+      const a=(F - P.c*P.v - P.k*P.x)/Math.max(0.05,P.m);
+      P.v += a*h;
+      P.x += P.v*h;
+    }
+    P.x=clamp(P.x,-0.55,0.55);
+
+    const wheelY=restY+P.x;
+    wheelGroup.position.set(0.55,wheelY,0);
+    upright.position.set(0,0.25,0);
+
+    const springTop=new THREE.Vector3(0.35,chassisY,0);
+    const springBottom=new THREE.Vector3(0.35,wheelY,0);
+    const curLen=springTop.y-springBottom.y;
+    spring.position.set(0.35,springBottom.y,0);
+    spring.scale.y=Math.max(0.15,curLen/restLength);
+
+    updateStrut(damperInner,new THREE.Vector3(-0.35,wheelY,0),new THREE.Vector3(-0.35,chassisY-0.05,0));
+
+    updateStrut(wbUpper,wbUpperPivot,new THREE.Vector3(0.55,wheelY+0.18,0));
+    updateStrut(wbLower,wbLowerPivot,new THREE.Vector3(0.55,wheelY-0.18,0));
+
+    history.push(P.x);
+    if(history.length>HIST_LEN) history.shift();
+    drawScope();
+
+    const wn=Math.sqrt(P.k/P.m);
+    const zeta=P.c/(2*Math.sqrt(P.k*P.m));
+    document.getElementById('susp-wn').textContent=(wn/TAU).toFixed(2);
+    document.getElementById('susp-zeta').textContent=zeta.toFixed(2);
+    let cls='Underdamped', clsColor='amber';
+    if(zeta>1.05){cls='Overdamped';} else if(zeta>0.95){cls='Critical';clsColor='green';}
+    document.getElementById('susp-class').textContent=cls;
+    document.getElementById('susp-x-val').textContent=P.x.toFixed(2);
+  }
+
+  return {
+    group, update, params:P,
+    cam:{theta:0.55,phi:1.15,radius:4.6,target:new THREE.Vector3(0.1,restY+0.55,0)}
+  };
+}
+
+/* ======================================================================
+   WIRE-UP
+   ====================================================================== */
+let modules={};
+let activeModule='engine';
+
+function init(){
+  initThree();
+  setupPointerControls(renderer.domElement);
+
+  modules.engine=buildEngine();
+  modules.diff=buildDifferential();
+  modules.steer=buildSteering();
+  modules.susp=buildSuspension();
+
+  Object.keys(modules).forEach(k=>{
+    scene.add(modules[k].group);
+    modules[k].group.visible=(k===activeModule);
+  });
+
+  camState.theta=modules.engine.cam.theta;
+  camState.phi=modules.engine.cam.phi;
+  camState.radius=modules.engine.cam.radius;
+  camState.target.copy(modules.engine.cam.target);
+
+  document.querySelectorAll('.tab-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>goToModule(btn.dataset.mod));
+  });
+
+  bindEngineUI();
+  bindDiffUI();
+  bindSteerUI();
+  bindSuspUI();
+
+  animate();
+}
+
+function bindEngineUI(){
+  const P=modules.engine.params;
+  const rpm=document.getElementById('eng-rpm');
+  rpm.addEventListener('input',()=>{
+    P.rpm=+rpm.value;
+    document.getElementById('eng-rpm-val').textContent=P.rpm.toLocaleString()+' rpm';
+  });
+  const modeBtns={harvest:document.getElementById('eng-harvest'),neutral:document.getElementById('eng-neutral'),deploy:document.getElementById('eng-deploy')};
+  function setMode(mode){
+    P.mguMode = mode==='harvest'?-1:(mode==='deploy'?1:0);
+    Object.values(modeBtns).forEach(b=>b.classList.remove('active'));
+    modeBtns[mode].classList.add('active');
+    document.getElementById('eng-mode-val').textContent = mode.charAt(0).toUpperCase()+mode.slice(1);
+  }
+  modeBtns.harvest.addEventListener('click',()=>setMode('harvest'));
+  modeBtns.neutral.addEventListener('click',()=>setMode('neutral'));
+  modeBtns.deploy.addEventListener('click',()=>setMode('deploy'));
+
+  const eraSwitch=document.getElementById('eng-era-switch');
+  eraSwitch.addEventListener('click',()=>{
+    const on=eraSwitch.classList.toggle('on');
+    P.era = on?'2026':'legacy';
+    document.getElementById('eng-era-label').textContent = modules.engine.ERA[P.era].label;
+  });
+}
+
+function bindDiffUI(){
+  const P=modules.diff.params;
+  const rpm=document.getElementById('diff-rpm');
+  rpm.addEventListener('input',()=>{
+    P.pinionRpm=+rpm.value;
+    document.getElementById('diff-rpm-val').textContent=P.pinionRpm.toLocaleString()+' rpm';
+  });
+  const corner=document.getElementById('diff-corner');
+  corner.addEventListener('input',()=>{
+    const v=+corner.value;
+    P.corner=v/100;
+    const label = v===0?'0% (straight)': (v>0? v+'% (right)': Math.abs(v)+'% (left)');
+    document.getElementById('diff-corner-val').textContent=label;
+  });
+}
+
+function bindSteerUI(){
+  const P=modules.steer.params;
+  const angle=document.getElementById('steer-angle');
+  angle.addEventListener('input',()=>{
+    P.angleDeg=+angle.value;
+    document.getElementById('steer-angle-val').textContent=(P.angleDeg>0?'+':'')+P.angleDeg.toFixed(1)+'°';
+  });
+}
+
+function bindSuspUI(){
+  const P=modules.susp.params;
+  const kS=document.getElementById('susp-k'), cS=document.getElementById('susp-c'), mS=document.getElementById('susp-m');
+  kS.addEventListener('input',()=>{P.k=+kS.value; document.getElementById('susp-k-val').textContent=P.k;});
+  cS.addEventListener('input',()=>{P.c=+cS.value; document.getElementById('susp-c-val').textContent=(+P.c).toFixed(1);});
+  mS.addEventListener('input',()=>{P.m=+mS.value; document.getElementById('susp-m-val').textContent=(+P.m).toFixed(2);});
+  document.getElementById('susp-bump').addEventListener('click',()=>{ P.x -= 0.4; });
+  const roadSwitch=document.getElementById('susp-road-switch');
+  roadSwitch.addEventListener('click',()=>{
+    P.roadOn=roadSwitch.classList.toggle('on');
+  });
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=Math.min(clock.getDelta(),0.05);
+
+  if(transitioning){
+    transT=Math.min(1,transT+dt/transDur);
+    const e=easeInOutCubic(transT);
+    camState.theta=lerp(transStart.theta,transGoal.theta,e);
+    camState.phi=lerp(transStart.phi,transGoal.phi,e);
+    camState.radius=lerp(transStart.radius,transGoal.radius,e);
+    camState.target.lerpVectors(transStart.target,transGoal.target,e);
+    if(transT>=1) transitioning=false;
+  }
+  applyCamera();
+
+  modules[activeModule].update(dt);
+
+  renderer.render(scene,camera);
+}
+
+init();
+</script>
+</body>
+</html>
