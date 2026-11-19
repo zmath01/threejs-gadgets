@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>F1 Systems Lab — Power Unit &amp; Dynamics Visualizer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -176,7 +176,8 @@ input[type=range]::-moz-range-thumb{
 @media (max-width:760px){
   aside#hud-panel{left:12px;right:12px;top:auto;bottom:12px;width:auto;max-height:46vh;}
   header.hud-top{flex-direction:column;padding:14px 14px 0 14px;}
-  nav.tabs{overflow-x:auto;max-width:100%;}
+  nav.tabs{width:100%;max-width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));}
+  .tab-btn{padding:7px 10px;justify-content:center;}
   .legend{display:none;}
 }
 </style>
@@ -501,7 +502,7 @@ function setupPointerControls(el){
     camState.theta -= dx*0.0065;
     camState.phi = clamp(camState.phi - dy*0.0065, 0.25, Math.PI-0.2);
   });
-  window.addEventListener('pointerup',()=>{isDragging=false;});
+  el.addEventListener('lostpointercapture', () => { isDragging = false; });
   el.addEventListener('wheel',e=>{
     e.preventDefault();
     transitioning=false;

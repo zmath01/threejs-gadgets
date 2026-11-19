@@ -191,14 +191,14 @@
     <!-- UI Overlay -->
     <div id="ui-overlay">
         <div id="info-panel">
-            <h2>⚡ Drone Control</h2>
+            <h2>⚡ Drone and MPC preview</h2>
             <div class="row"><span class="label">State</span><span class="value" id="state-display">🟢 Tracking</span></div>
             <div class="row"><span class="label">KF Error</span><span class="value" id="kf-error">0.00 m</span></div>
             <div class="row"><span class="label">MPC Horizon</span><span class="value" id="mpc-horizon">8 steps</span></div>
             <div class="row"><span class="label">Speed</span><span class="value" id="speed-display">0.0 m/s</span></div>
             <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
                 <span class="badge badge-kf">🔵 Kalman Filter</span>
-                <span class="badge badge-mpc">🟢 MPC</span>
+                <span class="badge badge-mpc">🟢 MPC preview</span>
             </div>
         </div>
 
@@ -210,11 +210,12 @@
         </div>
 
         <div id="legend">
-            <div><span class="swatch" style="background:#ff6b6b;"></span> True path</div>
+            <div>Double-click the ground to set a waypoint. R resumes the path.</div>
+            <div><span class="swatch" style="background:#ff6b6b;"></span> Reference path</div>
             <div><span class="swatch" style="background:#ffd93d;"></span> Noisy measurements</div>
             <div><span class="swatch" style="background:#64b5f6;"></span> KF estimate</div>
             <div><span class="swatch" style="background:#42e695;"></span> MPC prediction</div>
-            <div><span class="swatch" style="background:rgba(100,181,246,0.15);border:1px solid rgba(100,181,246,0.3);"></span> Covariance (1σ)</div>
+            <div><span class="swatch" style="background:rgba(100,181,246,0.15);border:1px solid rgba(100,181,246,0.3);"></span> Estimated position uncertainty (scaled)</div>
         </div>
     </div>
 
@@ -222,8 +223,8 @@
     <script type="importmap">
         {
             "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
             }
         }
     </script>
@@ -460,6 +461,8 @@
         // ──────────────────────────────────────────────────────
         // 5. PATH DEFINITION (Figure-8 + vertical variation)
         // ──────────────────────────────────────────────────────
+        const PATH_PERIOD = 2 * Math.PI / 0.3;
+        const PATH_RATE = 0.35;
         function getPathPoint(t) {
             const scale = 5.5;
             const x = Math.sin(t * 1.8) * scale;
@@ -468,18 +471,20 @@
             return new THREE.Vector3(x, y, z);
         }
 
-        function getPathDerivative(t) {
-            const dt = 0.001;
-            const p1 = getPathPoint(t);
-            const p2 = getPathPoint(t + dt);
-            return new THREE.Vector3().copy(p2).sub(p1).multiplyScalar(1 / dt);
+        function getPathVelocity(t) {
+            return new THREE.Vector3(
+                5.5 * 1.8 * Math.cos(1.8 * t),
+                1.2 * (1.2 * Math.cos(1.2 * t) * Math.cos(0.6 * t) -
+                    0.6 * Math.sin(1.2 * t) * Math.sin(0.6 * t)),
+                5.5 * 0.7 * 0.9 * Math.cos(0.9 * t),
+            ).multiplyScalar(PATH_RATE);
         }
 
         // Precompute path
         const pathPoints = [];
         const numPathPoints = 300;
         for (let i = 0; i < numPathPoints; i++) {
-            const t = (i / numPathPoints) * Math.PI * 4;
+            const t = (i / numPathPoints) * PATH_PERIOD;
             pathPoints.push(getPathPoint(t));
         }
 
@@ -507,7 +512,7 @@
         // Waypoint markers
         const markerMat = new THREE.MeshBasicMaterial({ color: 0xff6b6b, transparent: true, opacity: 0.2 });
         for (let i = 0; i < 12; i++) {
-            const t = (i / 12) * Math.PI * 4;
+            const t = (i / 12) * PATH_PERIOD;
             const p = getPathPoint(t);
             const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), markerMat);
             sphere.position.copy(p);
@@ -520,28 +525,23 @@
         class KalmanFilter {
             constructor() {
                 // State: [x, y, z, vx, vy, vz]
-                this.x = new Float32Array([0, 2.5, 0, 0, 0, 0]);
-                this.P = new Float32Array(36);
+                this.x = new Float64Array([0, 2.5, 0, 0, 0, 0]);
+                this.P = new Float64Array(36);
                 // Initialize P as identity
                 for (let i = 0; i < 6; i++) this.P[i * 6 + i] = 1.0;
 
                 // Process noise (Q)
-                this.Q = new Float32Array(36);
+                this.Q = new Float64Array(36);
                 for (let i = 0; i < 6; i++) this.Q[i * 6 + i] = 0.02;
 
                 // Measurement noise (R)
-                this.R = new Float32Array(9);
+                this.R = new Float64Array(9);
                 for (let i = 0; i < 3; i++) this.R[i * 3 + i] = 0.15;
 
                 this.dt = 0.016;
-                this.I = new Float32Array(36);
-                for (let i = 0; i < 6; i++) this.I[i * 6 + i] = 1.0;
 
                 // State transition matrix A
-                this.A = new Float32Array(36);
-                this.H = new Float32Array(18); // 3x6
-                // H: [I_3x3, 0_3x3]
-                for (let i = 0; i < 3; i++) this.H[i * 6 + i] = 1.0;
+                this.A = new Float64Array(36);
 
                 this._updateA();
             }
@@ -560,7 +560,7 @@
             predict(control = null) {
                 this._updateA();
                 // x = A * x
-                const newX = new Float32Array(6);
+                const newX = new Float64Array(6);
                 for (let i = 0; i < 6; i++) {
                     let sum = 0;
                     for (let j = 0; j < 6; j++) sum += this.A[i * 6 + j] * this.x[j];
@@ -575,7 +575,7 @@
                 this.x.set(newX);
 
                 // P = A * P * A^T + Q
-                const AP = new Float32Array(36);
+                const AP = new Float64Array(36);
                 for (let i = 0; i < 6; i++) {
                     for (let j = 0; j < 6; j++) {
                         let sum = 0;
@@ -583,7 +583,7 @@
                         AP[i * 6 + j] = sum;
                     }
                 }
-                const APAT = new Float32Array(36);
+                const APAT = new Float64Array(36);
                 for (let i = 0; i < 6; i++) {
                     for (let j = 0; j < 6; j++) {
                         let sum = 0;
@@ -597,69 +597,31 @@
             }
 
             update(measurement) {
-                // K = P * H^T * (H * P * H^T + R)^-1
-                const HP = new Float32Array(18);
+                // H selects position, so S is the leading 3×3 block of P plus R.
+                const S = new Float64Array(9);
                 for (let i = 0; i < 3; i++) {
-                    for (let j = 0; j < 6; j++) {
-                        let sum = 0;
-                        for (let k = 0; k < 6; k++) sum += this.H[i * 6 + k] * this.P[k * 6 + j];
-                        HP[i * 6 + j] = sum;
-                    }
+                    for (let j = 0; j < 3; j++) S[i * 3 + j] = this.P[i * 6 + j] + this.R[i * 3 + j];
                 }
-                const HPHt = new Float32Array(9);
-                for (let i = 0; i < 3; i++) {
-                    for (let j = 0; j < 3; j++) {
-                        let sum = 0;
-                        for (let k = 0; k < 6; k++) sum += HP[i * 6 + k] * this.H[j * 6 + k];
-                        HPHt[i * 3 + j] = sum;
-                    }
-                }
-                // S = HPHt + R
-                const S = new Float32Array(9);
-                for (let i = 0; i < 9; i++) S[i] = HPHt[i] + this.R[i];
-
-                // Invert S (3x3)
                 const invS = this._invert3x3(S);
-
-                // K = HP^T * invS
-                const K = new Float32Array(18);
-                for (let i = 0; i < 3; i++) {
+                const K = new Float64Array(18);
+                for (let i = 0; i < 6; i++) {
                     for (let j = 0; j < 3; j++) {
-                        let sum = 0;
-                        for (let k = 0; k < 6; k++) sum += HP[k * 6 + i] * invS[j * 3 + k];
-                        K[i * 6 + j] = sum;
+                        for (let k = 0; k < 3; k++) K[i * 3 + j] += this.P[i * 6 + k] * invS[k * 3 + j];
                     }
                 }
 
-                // y = z - H*x
-                const y = new Float32Array(3);
-                for (let i = 0; i < 3; i++) {
-                    let hx = 0;
-                    for (let j = 0; j < 6; j++) hx += this.H[i * 6 + j] * this.x[j];
-                    y[i] = measurement[i] - hx;
+                const innovation = measurement.map((value, i) => value - this.x[i]);
+                for (let i = 0; i < 6; i++) {
+                    for (let j = 0; j < 3; j++) this.x[i] += K[i * 3 + j] * innovation[j];
                 }
 
-                // x = x + K*y
+                // P ← P − KHP. Compute one triangle to preserve symmetry in floating point.
+                const newP = new Float64Array(36);
                 for (let i = 0; i < 6; i++) {
-                    let sum = 0;
-                    for (let j = 0; j < 3; j++) sum += K[j * 6 + i] * y[j];
-                    this.x[i] += sum;
-                }
-
-                // P = (I - K*H) * P
-                const KH = new Float32Array(36);
-                for (let i = 0; i < 6; i++) {
-                    for (let j = 0; j < 6; j++) {
-                        let sum = 0;
-                        for (let k = 0; k < 3; k++) sum += K[k * 6 + i] * this.H[k * 6 + j];
-                        KH[i * 6 + j] = sum;
-                    }
-                }
-                const newP = new Float32Array(36);
-                for (let i = 0; i < 6; i++) {
-                    for (let j = 0; j < 6; j++) {
-                        newP[i * 6 + j] = this.P[i * 6 + j];
-                        for (let k = 0; k < 6; k++) newP[i * 6 + j] -= KH[i * 6 + k] * this.P[k * 6 + j];
+                    for (let j = i; j < 6; j++) {
+                        let value = this.P[i * 6 + j];
+                        for (let k = 0; k < 3; k++) value -= K[i * 3 + k] * this.P[k * 6 + j];
+                        newP[i * 6 + j] = newP[j * 6 + i] = value;
                     }
                 }
                 this.P.set(newP);
@@ -669,7 +631,7 @@
                 const det = m[0] * (m[4] * m[8] - m[5] * m[7]) -
                     m[1] * (m[3] * m[8] - m[5] * m[6]) +
                     m[2] * (m[3] * m[7] - m[4] * m[6]);
-                const inv = new Float32Array(9);
+                const inv = new Float64Array(9);
                 inv[0] = (m[4] * m[8] - m[5] * m[7]) / det;
                 inv[1] = (m[2] * m[7] - m[1] * m[8]) / det;
                 inv[2] = (m[1] * m[5] - m[2] * m[4]) / det;
@@ -692,7 +654,7 @@
 
             getCovariance() {
                 // Return position covariance (3x3)
-                const cov = new Float32Array(9);
+                const cov = new Float64Array(9);
                 for (let i = 0; i < 3; i++) {
                     for (let j = 0; j < 3; j++) {
                         cov[i * 3 + j] = this.P[i * 6 + j];
@@ -709,146 +671,48 @@
             constructor() {
                 this.N = 8; // Prediction horizon
                 this.dt = 0.06;
-                this.Q = new Float32Array(6);
-                for (let i = 0; i < 6; i++) this.Q[i] = i < 3 ? 4.0 : 1.0;
-                this.R = new Float32Array(3);
-                for (let i = 0; i < 3; i++) this.R[i] = 0.5;
-                this.maxAccel = 3.0;
-                this.predictedTrajectory = [];
+                this.positionWeight = 4;
+                this.controlWeight = 0.5;
+                this.maxAccel = 3;
+                this.controls = new Float64Array(this.N * 3);
+                this.positions = new Float64Array((this.N + 1) * 3);
+                this.predictedTrajectory = Array.from({length: this.N}, () => new THREE.Vector3());
             }
 
-            computeControl(state, refState, refDerivative) {
-                // Simple gradient-based MPC
-                const N = this.N;
-                const dt = this.dt;
-                const Q = this.Q;
-                const R = this.R;
-                const maxA = this.maxAccel;
-
-                // Initial control sequence (use previous or zero)
-                let u = new Float32Array(N * 3);
-                // Warm start with zeros
-
-                // Gradient descent
-                const iterations = 12;
-                const alpha = 0.02;
-
-                let bestCost = Infinity;
-                let bestU = new Float32Array(u);
-
-                for (let iter = 0; iter < iterations; iter++) {
-                    // Forward simulate
-                    const xPred = new Float32Array((N + 1) * 6);
-                    for (let i = 0; i < 6; i++) xPred[i] = state[i];
-
-                    let cost = 0;
+            predict(state) {
+                const {dt, N, positions, controls} = this;
+                positions.set(state.slice(0, 3), 0);
+                for (let axis = 0; axis < 3; axis++) {
+                    let velocity = state[3 + axis];
                     for (let k = 0; k < N; k++) {
-                        const idx = k * 3;
-                        const ax = u[idx],
-                            ay = u[idx + 1],
-                            az = u[idx + 2];
-                        // Clamp
-                        const cax = Math.max(-maxA, Math.min(maxA, ax));
-                        const cay = Math.max(-maxA, Math.min(maxA, ay));
-                        const caz = Math.max(-maxA, Math.min(maxA, az));
-
-                        // Dynamics: x_{k+1} = x_k + v*dt, v_{k+1} = v_k + a*dt
-                        const base = k * 6;
-                        const next = (k + 1) * 6;
-                        for (let i = 0; i < 3; i++) {
-                            xPred[next + i] = xPred[base + i] + xPred[base + 3 + i] * dt;
-                            xPred[next + 3 + i] = xPred[base + 3 + i] + [cax, cay, caz][i] * dt;
-                        }
-
-                        // Cost: tracking error + control effort
-                        const refX = refState[k + 1];
-                        for (let i = 0; i < 3; i++) {
-                            const err = xPred[next + i] - refX[i];
-                            cost += Q[i] * err * err;
-                        }
-                        for (let i = 0; i < 3; i++) {
-                            cost += R[i] * [cax, cay, caz][i] * [cax, cay, caz][i];
-                        }
+                        const i = k * 3 + axis;
+                        positions[i + 3] = positions[i] + velocity * dt;
+                        velocity += controls[i] * dt;
                     }
+                }
+            }
 
-                    if (cost < bestCost) {
-                        bestCost = cost;
-                        bestU.set(u);
-                    }
-
-                    // Compute gradient (finite differences)
-                    const grad = new Float32Array(N * 3);
-                    const eps = 0.01;
-                    for (let k = 0; k < N; k++) {
-                        for (let d = 0; d < 3; d++) {
-                            const idx = k * 3 + d;
-                            const orig = u[idx];
-                            u[idx] = orig + eps;
-                            let costP = 0;
-                            // Forward simulate with perturbed control
-                            const xPredP = new Float32Array((N + 1) * 6);
-                            for (let i = 0; i < 6; i++) xPredP[i] = state[i];
-                            for (let kk = 0; kk < N; kk++) {
-                                const idx2 = kk * 3;
-                                const ax2 = u[idx2],
-                                    ay2 = u[idx2 + 1],
-                                    az2 = u[idx2 + 2];
-                                const cax2 = Math.max(-maxA, Math.min(maxA, ax2));
-                                const cay2 = Math.max(-maxA, Math.min(maxA, ay2));
-                                const caz2 = Math.max(-maxA, Math.min(maxA, az2));
-                                const base2 = kk * 6;
-                                const next2 = (kk + 1) * 6;
-                                for (let i = 0; i < 3; i++) {
-                                    xPredP[next2 + i] = xPredP[base2 + i] + xPredP[base2 + 3 + i] * dt;
-                                    xPredP[next2 + 3 + i] = xPredP[base2 + 3 + i] + [cax2, cay2, caz2][i] * dt;
-                                }
-                                const refX2 = refState[kk + 1];
-                                for (let i = 0; i < 3; i++) {
-                                    const err = xPredP[next2 + i] - refX2[i];
-                                    costP += Q[i] * err * err;
-                                }
-                                for (let i = 0; i < 3; i++) {
-                                    costP += R[i] * [cax2, cay2, caz2][i] * [cax2, cay2, caz2][i];
-                                }
-                            }
-                            u[idx] = orig;
-                            grad[idx] = (costP - cost) / eps;
+            computeControl(state, reference) {
+                const {dt, N, positions, controls, maxAccel} = this;
+                controls.fill(0);
+                for (let iteration = 0; iteration < 12; iteration++) {
+                    this.predict(state);
+                    // Reverse the linear dynamics to differentiate the quadratic cost in O(N).
+                    for (let axis = 0; axis < 3; axis++) {
+                        let dPosition = 0;
+                        let dVelocity = 0;
+                        for (let k = N - 1; k >= 0; k--) {
+                            const i = k * 3 + axis;
+                            dPosition += 2 * this.positionWeight * (positions[i + 3] - reference[k + 1][axis]);
+                            const gradient = 2 * this.controlWeight * controls[i] + dVelocity * dt;
+                            controls[i] = Math.max(-maxAccel, Math.min(maxAccel, controls[i] - 0.02 * gradient));
+                            dVelocity += dPosition * dt;
                         }
-                    }
-
-                    // Update controls with gradient descent
-                    for (let i = 0; i < N * 3; i++) {
-                        u[i] -= alpha * grad[i];
-                        u[i] = Math.max(-maxA, Math.min(maxA, u[i]));
                     }
                 }
 
-                // Use best found
-                const finalU = bestU;
-
-                // Store predicted trajectory for visualization
-                this.predictedTrajectory = [];
-                const xPred = new Float32Array((this.N + 1) * 6);
-                for (let i = 0; i < 6; i++) xPred[i] = state[i];
-                for (let k = 0; k < this.N; k++) {
-                    const idx = k * 3;
-                    const ax = finalU[idx],
-                        ay = finalU[idx + 1],
-                        az = finalU[idx + 2];
-                    const cax = Math.max(-maxA, Math.min(maxA, ax));
-                    const cay = Math.max(-maxA, Math.min(maxA, ay));
-                    const caz = Math.max(-maxA, Math.min(maxA, az));
-                    const base = k * 6;
-                    const next = (k + 1) * 6;
-                    for (let i = 0; i < 3; i++) {
-                        xPred[next + i] = xPred[base + i] + xPred[base + 3 + i] * dt;
-                        xPred[next + 3 + i] = xPred[base + 3 + i] + [cax, cay, caz][i] * dt;
-                    }
-                    this.predictedTrajectory.push(new THREE.Vector3(xPred[next + 0], xPred[next + 1], xPred[next + 2]));
-                }
-
-                // Return first control
-                return new THREE.Vector3(finalU[0], finalU[1], finalU[2]);
+                this.predict(state);
+                this.predictedTrajectory.forEach((point, i) => point.fromArray(positions, (i + 1) * 3));
             }
         }
 
@@ -886,12 +750,11 @@
         }
 
         function updateCovarianceEllipsoid(group, pos, cov, scale = 1.0) {
-            // Extract eigenvalues/vectors from 3x3 covariance
+            // Independent Cartesian axes in this model make the covariance diagonal.
             const m = cov;
-            // Simple: use sqrt of diagonal as radii
-            const rx = Math.sqrt(Math.abs(m[0])) * 1.5 * scale;
-            const ry = Math.sqrt(Math.abs(m[4])) * 1.5 * scale;
-            const rz = Math.sqrt(Math.abs(m[8])) * 1.5 * scale;
+            const rx = Math.sqrt(Math.max(0, m[0])) * 1.5 * scale;
+            const ry = Math.sqrt(Math.max(0, m[4])) * 1.5 * scale;
+            const rz = Math.sqrt(Math.max(0, m[8])) * 1.5 * scale;
 
             // Clamp for visibility
             const maxR = 2.5;
@@ -956,6 +819,8 @@
             const g = new THREE.Group();
             const b1 = ghostBody.clone();
             const b2 = ghostBody2.clone();
+            b1.material = b1.material.clone();
+            b2.material = b2.material.clone();
             g.add(b1);
             g.add(b2);
             g.visible = false;
@@ -987,6 +852,7 @@
         let truePos = new THREE.Vector3(0, 2.5, 0);
         let trueVel = new THREE.Vector3(1, 0.2, 0.5);
         let pathT = 0;
+        let waypoint = null;
 
         // For measurements
         const measNoise = 0.12;
@@ -1044,25 +910,23 @@
             }
 
             // ── Update path parameter ──
-            pathT += delta * 0.35;
-            if (pathT > Math.PI * 4) pathT -= Math.PI * 4;
+            if (!waypoint) pathT = (pathT + delta * PATH_RATE) % PATH_PERIOD;
 
             // ── True state ──
-            const refPos = getPathPoint(pathT);
-            const refDeriv = getPathDerivative(pathT);
-            const targetSpeed = refDeriv.length();
+            const refPos = waypoint || getPathPoint(pathT);
+            const refVel = waypoint ? new THREE.Vector3() : getPathVelocity(pathT);
 
             // Simple true dynamics (follow path with some inertia)
             const followStrength = 3.5;
             const error = new THREE.Vector3().copy(refPos).sub(truePos);
-            const velError = new THREE.Vector3().copy(refDeriv).sub(trueVel);
+            const velError = new THREE.Vector3().copy(refVel).sub(trueVel);
             const accel = new THREE.Vector3()
                 .copy(error).multiplyScalar(followStrength)
                 .add(velError.multiplyScalar(1.2));
             accel.clampLength(0, 4.0);
 
             trueVel.add(accel.multiplyScalar(delta));
-            trueVel.multiplyScalar(0.98);
+            trueVel.multiplyScalar(0.98 ** (60 * delta));
             truePos.add(trueVel.clone().multiplyScalar(delta));
 
             // ── Measurements (noisy) ──
@@ -1073,7 +937,6 @@
             );
 
             // ── Kalman Filter ──
-            const stateArray = new Float32Array([truePos.x, truePos.y, truePos.z, trueVel.x, trueVel.y, trueVel.z]);
             kf.dt = delta;
             kf.predict(null);
             kf.update([meas.x, meas.y, meas.z]);
@@ -1084,19 +947,17 @@
             // Build reference trajectory for prediction horizon
             const refStates = [];
             for (let i = 0; i <= mpc.N; i++) {
-                const t = pathT + i * delta * 0.8;
-                const p = getPathPoint(t);
+                const p = waypoint || getPathPoint(pathT + i * mpc.dt * PATH_RATE);
                 refStates.push([p.x, p.y, p.z]);
             }
             const mpcState = new Float32Array([
                 kfPos.x, kfPos.y, kfPos.z,
                 kfVel.x, kfVel.y, kfVel.z
             ]);
-            const control = mpc.computeControl(mpcState, refStates, null);
+            mpc.computeControl(mpcState, refStates);
 
-            // Apply control to drone (smooth follow)
-            const targetPos = kfPos.clone().add(control.clone().multiplyScalar(delta * 0.3));
-            droneGroup.position.lerp(targetPos, 0.25);
+            // The rendered drone is the simulated plant. MPC shows a candidate trajectory.
+            droneGroup.position.copy(truePos);
 
             // ── Update drone orientation ──
             const lookTarget = droneGroup.position.clone().add(trueVel.clone().normalize().multiplyScalar(2));
@@ -1234,6 +1095,8 @@
         // ──────────────────────────────────────────────────────
         window.addEventListener('keydown', (e) => {
             if (e.key === 'r' || e.key === 'R') {
+                waypoint = null;
+                document.getElementById('state-display').textContent = 'Tracking path';
                 // Reset view
                 camera.position.set(14, 10, 18);
                 controls.target.set(0, 2.5, 0);
@@ -1276,16 +1139,17 @@
                 marker.position.set(pt.x, 0.05, pt.z);
                 marker.rotation.x = -Math.PI / 2;
                 scene.add(marker);
-                setTimeout(() => scene.remove(marker), 2000);
-                // Move drone toward this point (subtle)
-                const target = new THREE.Vector3(pt.x, 2.0, pt.z);
-                // We'll just adjust the path to go through this point
-                // For simplicity, we'll update the path temporarily
-                console.log('📍 Waypoint set at', pt.x.toFixed(1), pt.z.toFixed(1));
+                setTimeout(() => {
+                    scene.remove(marker);
+                    marker.geometry.dispose();
+                    marker.material.dispose();
+                }, 2000);
+                waypoint = new THREE.Vector3(pt.x, 2.0, pt.z);
+                document.getElementById('state-display').textContent = 'Tracking waypoint';
             }
         });
 
-        console.log('💡 Double-click ground to set waypoint • R to reset view • F for fullscreen');
+
     </script>
 </body>
 </html>

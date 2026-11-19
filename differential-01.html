@@ -51,13 +51,18 @@
         h1 { margin: 0 0 5px 0; font-size: 1.2rem; color: #ffaa00; }
         p { margin: 0; font-size: 0.9rem; color: #ccc; }
         #status { margin-top: 10px; font-size: 0.85rem; color: #aaa; font-style: italic; }
+        @media (max-width: 560px) {
+            #controls { width: calc(100% - 16px); box-sizing: border-box; bottom: 8px; padding: 8px; }
+            .control-row { flex-wrap: wrap; gap: 6px; }
+            #info { max-width: calc(100% - 16px); box-sizing: border-box; top: 8px; left: 8px; }
+        }
     </style>
     <!-- Import Map for Three.js -->
     <script type="importmap">
         {
             "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
             }
         }
     </script>
@@ -77,7 +82,7 @@
             <button id="modeSlip">One Wheel Slip (Ice)</button>
         </div>
         <div class="control-row">
-            <label>Carrier Speed (RPM):</label>
+            <label for="speedRange">Carrier Speed (RPM):</label>
             <input type="range" id="speedRange" min="0" max="3000" value="1000">
             <span id="rpmValue" class="value-display">1000</span>
         </div>
@@ -300,12 +305,9 @@
         // --- Animation State ---
         let carrierAngle = 0;
         let spiderAngle = 0; // Rotation of spider gears on their own pin
-        let axleDiff = 0; // Relative rotation difference caused by spider gears
         
         let mode = 'straight'; // straight, turn, slip
         let baseRPM = 1000;
-        let turnOffset = 0; // Extra speed for one side
-        let slipFactor = 0;
 
         const statusEl = document.getElementById('status');
         const rpmDisplay = document.getElementById('rpmValue');
@@ -314,22 +316,16 @@
         // Controls
         document.getElementById('modeStraight').onclick = () => {
             mode = 'straight';
-            slipFactor = 0;
-            turnOffset = 0;
             statusEl.textContent = "Mode: Straight Drive - Spider gears do not rotate on their pin. Both wheels equal speed.";
             updateButtons('modeStraight');
         };
         document.getElementById('modeTurn').onclick = () => {
             mode = 'turn';
-            slipFactor = 0;
-            turnOffset = 0.5; // Simulate turning
             statusEl.textContent = "Mode: Turning - Outer wheel spins faster, inner slower. Spider gears rotate.";
             updateButtons('modeTurn');
         };
         document.getElementById('modeSlip').onclick = () => {
             mode = 'slip';
-            turnOffset = 0;
-            slipFactor = 1; // One wheel stops, other goes double
             statusEl.textContent = "Mode: One Wheel Slip - Left wheel stuck (0 RPM). Right wheel spins at 2x Carrier speed.";
             updateButtons('modeSlip');
         };
@@ -348,10 +344,12 @@
         // --- Animation Loop ---
         const clock = new THREE.Clock();
 
+        let leftAngle = 0, rightAngle = 0;
+
         function animate() {
             requestAnimationFrame(animate);
 
-            const dt = clock.getDelta();
+            const dt = Math.min(clock.getDelta(), 0.05);
             
             // Calculate Carrier Rotation
             // RPM to rad/s: RPM * 2PI / 60
@@ -374,8 +372,8 @@
                 // Simulate a turn: Left slower, Right faster (or vice versa)
                 // wL = wC - d, wR = wC + d
                 const diff = carrierSpeedRadS * 0.4; // 40% difference
-                leftSpeedRatio = (carrierSpeedRadS - diff) / carrierSpeedRadS;
-                rightSpeedRatio = (carrierSpeedRadS + diff) / carrierSpeedRadS;
+                leftSpeedRatio = 0.6;
+                rightSpeedRatio = 1.4;
                 
                 // Spider gears must spin to accommodate this difference
                 // The rate of spider spin is proportional to the difference
@@ -388,47 +386,16 @@
                 spiderSpinSpeed = carrierSpeedRadS; 
             }
 
-            // Apply rotations
-            // Axles rotate relative to world, but their base is moving with carrier?
-            // Actually, in the scene graph:
-            // Carrier rotates around X.
-            // Side gears are children of Carrier, so they inherit Carrier rotation.
-            // But Side gears also rotate on their own axis (X) relative to Carrier.
-            // Total Rotation of Side Gear = Carrier Rotation + Relative Rotation
-            
-            // Relative rotation accumulation
-            const dLeftRel = (carrierSpeedRadS * leftSpeedRatio - carrierSpeedRadS) * dt;
-            const dRightRel = (carrierSpeedRadS * rightSpeedRatio - carrierSpeedRadS) * dt;
-
-            // We need to track cumulative relative angle
-            if (!leftAxlePivot.userData.relAngle) leftAxlePivot.userData.relAngle = 0;
-            if (!rightAxlePivot.userData.relAngle) rightAxlePivot.userData.relAngle = 0;
-            if (!spiderGear1.userData.spinAngle) spiderGear1.userData.spinAngle = 0;
-
-            leftAxlePivot.userData.relAngle += dLeftRel;
-            rightAxlePivot.userData.relAngle += dRightRel;
-            spiderGear1.userData.spinAngle += spiderSpinSpeed * dt;
-            spiderGear2.userData.spinAngle -= spiderSpinSpeed * dt; // Opposite direction
-
-            // Apply relative rotation to the pivots (which are children of scene, but positioned at side gear loc)
-            // Wait, my scene graph setup:
-            // leftAxlePivot is added to scene. 
-            // But the Side Gear is inside carrierGroup.
-            // Visual sync: We must rotate the independent axle pivots to match the side gears inside the rotating carrier.
-            
-            // Total Angle for Left Axle = CarrierAngle + RelativeAngle
-            leftAxlePivot.rotation.x = carrierAngle + leftAxlePivot.userData.relAngle;
-            rightAxlePivot.rotation.x = carrierAngle + rightAxlePivot.userData.relAngle;
-
-            // Rotate Spider Gears on their pin (Y axis in local carrier space)
-            spiderGear1.rotation.z = spiderGear1.userData.spinAngle; // Rotating on their mount
-            spiderGear2.rotation.z = spiderGear2.userData.spinAngle;
-
-            // Sync Side Gear visuals inside carrier to the axle pivots?
-            // The side gears inside the carrier are just visual representations of the connection.
-            // Their rotation relative to carrier = relativeAngle of axle.
-            leftSideGear.rotation.x = leftAxlePivot.userData.relAngle; 
-            rightSideGear.rotation.x = rightAxlePivot.userData.relAngle;
+            // Axles rotate in world space. Side gears inherit the carrier angle.
+            leftAngle += carrierSpeedRadS * leftSpeedRatio * dt;
+            rightAngle += carrierSpeedRadS * rightSpeedRatio * dt;
+            spiderAngle += spiderSpinSpeed * dt;
+            leftAxlePivot.rotation.x = leftAngle;
+            rightAxlePivot.rotation.x = rightAngle;
+            leftSideGear.rotation.x = leftAngle - carrierAngle;
+            rightSideGear.rotation.x = rightAngle - carrierAngle;
+            spiderGear1.rotation.z = spiderAngle;
+            spiderGear2.rotation.z = -spiderAngle;
 
             controls.update();
             renderer.render(scene, camera);

@@ -13,7 +13,9 @@ https://zmath01.github.io/threejs-gadgets
 | ⚙️ Differential Simulation | Interactive gear differential & torque-feature visualizer | [`differential-01.html`](differential-01.html) |
 | 🏎️ F1 Systems Lab | Power unit & dynamics visualizer with engine/gearbox telemetry | [`f1-system-full.html`](f1-system-full.html) |
 | 🧊 Mental Rotation Trainer | Allocentric spatial trainer with rotation/timing scoring | [`mental-rotation-test.html`](mental-rotation-test.html) |
-| ✨ Compute Showcase | Matrix math, particle physics and Game of Life via GPU compute | [`matrix-particles-game.html`](matrix-particles-game.html) |
+| ✨ Compute Showcase | Matrix math, particle physics and Game of Life computed in JavaScript and rendered in WebGL | [`matrix-particles-game.html`](matrix-particles-game.html) |
+
+| 🚁 Drone Simulation | Flight path, state estimation, and control prediction | [`drone-simulation.html`](drone-simulation.html) |
 
 ## Tech stack
 

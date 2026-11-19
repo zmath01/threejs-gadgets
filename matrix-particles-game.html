@@ -11,7 +11,7 @@
         button { padding: 10px 20px; background: #0078d4; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; transition: background 0.2s; }
         button:hover { background: #005a9e; }
         button.active { background: #004578; border: 2px solid #4cc2ff; }
-        #container { width: 800px; height: 600px; background: #000; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.5); position: relative; }
+        #container { width: min(800px, 100%); aspect-ratio: 4 / 3; background: #000; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.5); position: relative; }
         #stats { margin-top: 10px; font-family: monospace; color: #aaa; }
         #matrix-overlay { position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px; color: #4cc2ff; pointer-events: none; white-space: pre; display: none; }
         #error { color: #ff6b6b; font-weight: bold; display: none; margin-top: 20px; text-align: center; }
@@ -20,7 +20,7 @@
 <body>
 
 <h1>Three.js Compute Showcase</h1>
-<div id="error">Three.js failed to load. Check your internet connection.</div>
+<div id="error" role="alert"></div>
 
 <div class="controls">
     <button id="btn-matrix" class="active">Matrix Math</button>
@@ -32,7 +32,7 @@
     <div id="matrix-overlay"></div>
 </div>
 
-<div id="stats">FPS: 0 | Demo: Matrix</div>
+<div id="stats">Demo: Matrix Math</div>
 
 <script type="importmap">
 {
@@ -59,7 +59,15 @@ const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container
 camera.position.set(4, 3, 6);
 camera.lookAt(0, 0, 0);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+let renderer;
+try {
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+} catch {
+    document.getElementById('error').textContent = 'WebGL is unavailable. Enable hardware acceleration or use a browser that supports WebGL.';
+    document.getElementById('error').style.display = 'block';
+    document.querySelectorAll('.controls button').forEach(button => { button.disabled = true; });
+    throw new Error('WebGL initialization failed');
+}
 renderer.setSize(container.clientWidth, container.clientHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 container.prepend(renderer.domElement);
@@ -74,6 +82,7 @@ controls.target.set(0, 0, 0);
 function resize() {
     const w = container.clientWidth;
     const h = container.clientHeight;
+    if (!w || !h) return;
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
@@ -82,20 +91,12 @@ window.addEventListener('resize', resize);
 
 // --- Demo Manager ---
 let currentDemo = null;
-let demoName = 'matrix';
 
-// Helper: remove all children except the renderer (which is first child)
 function clearScene() {
-    while (scene.children.length > 0) {
-        const child = scene.children[0];
-        if (child === renderer.domElement) break; // skip renderer
+    for (const child of [...scene.children]) {
         scene.remove(child);
-        if (child.geometry) child.geometry.dispose();
-        if (child.material) {
-            if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
-            else child.material.dispose();
-        }
-        // recursively dispose textures, etc. (simplified)
+        child.geometry?.dispose();
+        child.material?.dispose();
     }
 }
 
@@ -137,6 +138,8 @@ const MatrixDemo = {
         // Store cube and matrix for update
         this.cube = cube;
         this.matrix = new THREE.Matrix4();
+        this.rotationStep = new THREE.Matrix4();
+        cube.matrixAutoUpdate = false;
 
         // Generate a random transformation matrix (rotation + scale + translation)
         // We'll make it a composition of rotation and scale for visual interest
@@ -147,8 +150,7 @@ const MatrixDemo = {
         this.matrix.multiply(rotX);
         // Apply to cube
         cube.matrix.copy(this.matrix);
-        cube.matrix.decompose(cube.position, cube.quaternion, cube.scale);
-        cube.updateMatrix();
+        cube.matrixWorldNeedsUpdate = true;
 
         // Display matrix as text
         this.updateOverlay();
@@ -170,12 +172,10 @@ const MatrixDemo = {
     update(time, delta) {
         this.time += delta;
         // Slowly rotate the matrix for demonstration
-        const rot = new THREE.Matrix4().makeRotationY(delta * 0.5);
-        this.matrix.multiply(rot);
+        this.matrix.multiply(this.rotationStep.makeRotationY(delta * 0.5));
         // Apply to cube
         this.cube.matrix.copy(this.matrix);
-        this.cube.matrix.decompose(this.cube.position, this.cube.quaternion, this.cube.scale);
-        this.cube.updateMatrix();
+        this.cube.matrixWorldNeedsUpdate = true;
         this.updateOverlay();
     },
 
@@ -195,7 +195,7 @@ const ParticleDemo = {
         // Geometry
         const positions = new Float32Array(this.count * 3);
         const colors = new Float32Array(this.count * 3);
-        const velocities = [];
+        const velocities = new Float32Array(this.count * 3);
 
         for (let i = 0; i < this.count; i++) {
             positions[i*3] = (Math.random() - 0.5) * 4;
@@ -204,15 +204,13 @@ const ParticleDemo = {
             colors[i*3] = Math.random();
             colors[i*3+1] = Math.random();
             colors[i*3+2] = Math.random();
-            velocities.push({
-                x: (Math.random() - 0.5) * 0.05,
-                y: (Math.random() - 0.5) * 0.05,
-                z: (Math.random() - 0.5) * 0.05,
-            });
+            for (let axis = 0; axis < 3; axis++) {
+                velocities[i * 3 + axis] = (Math.random() - 0.5) * 0.05;
+            }
         }
 
         const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
         geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
         const material = new THREE.PointsMaterial({
@@ -225,6 +223,7 @@ const ParticleDemo = {
         });
 
         this.points = new THREE.Points(geometry, material);
+        this.points.frustumCulled = false;
         scene.add(this.points);
 
         // Store velocities and boundaries
@@ -243,38 +242,17 @@ const ParticleDemo = {
         const pos = this.points.geometry.attributes.position.array;
         const vel = this.velocities;
         const dt = Math.min(delta, 0.05);
-        const gravity = this.gravity;
         const bounds = this.bounds;
-        const bounce = this.bounce;
-        const damping = this.damping;
+        const damping = this.damping ** (dt * 60);
 
-        for (let i = 0; i < this.count; i++) {
-            const i3 = i * 3;
-            // Apply gravity
-            vel[i].x += gravity.x * dt;
-            vel[i].y += gravity.y * dt;
-            vel[i].z += gravity.z * dt;
-
-            // Damping
-            vel[i].x *= damping;
-            vel[i].y *= damping;
-            vel[i].z *= damping;
-
-            // Update position
-            pos[i3] += vel[i].x * dt;
-            pos[i3+1] += vel[i].y * dt;
-            pos[i3+2] += vel[i].z * dt;
-
-            // Bounce off walls
-            for (let axis = 0; axis < 3; axis++) {
-                const idx = i3 + axis;
-                if (pos[idx] > bounds) {
-                    pos[idx] = bounds;
-                    vel[i][['x','y','z'][axis]] *= -bounce;
-                } else if (pos[idx] < -bounds) {
-                    pos[idx] = -bounds;
-                    vel[i][['x','y','z'][axis]] *= -bounce;
-                }
+        for (let i = 0; i < pos.length; i++) {
+            if (i % 3 === 1) vel[i] += this.gravity.y * dt;
+            vel[i] *= damping;
+            pos[i] += vel[i] * dt;
+            if (Math.abs(pos[i]) > bounds) {
+                const wall = Math.sign(pos[i]);
+                pos[i] = wall * bounds;
+                if (wall * vel[i] > 0) vel[i] *= -this.bounce;
             }
         }
 
@@ -311,10 +289,7 @@ const GolDemo = {
         texture.magFilter = THREE.NearestFilter;
 
         // Create a plane geometry with the same aspect as the container
-        const aspect = container.clientWidth / container.clientHeight;
-        const planeWidth = 4;
-        const planeHeight = planeWidth / aspect;
-        const geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
+        const geometry = new THREE.PlaneGeometry(4, 4);
         const material = new THREE.MeshBasicMaterial({ map: texture });
         const mesh = new THREE.Mesh(geometry, material);
         scene.add(mesh);
@@ -335,12 +310,13 @@ const GolDemo = {
         }
 
         // Camera adjustment: zoom to fit
-        camera.position.set(0, 0, 3);
+        camera.position.set(0, 0, 5.6 / Math.min(1, camera.aspect));
         controls.target.set(0, 0, 0);
         controls.update();
 
         // Stats
         this.generation = 0;
+        this.elapsed = 0;
         this.updateStats();
     },
 
@@ -349,6 +325,11 @@ const GolDemo = {
     },
 
     update(time, delta) {
+        this.elapsed += delta;
+        const generationInterval = 1 / 20;
+        if (this.elapsed < generationInterval) return;
+        this.elapsed -= generationInterval;
+
         const size = this.size;
         const current = this.current;
         const next = this.next;
@@ -393,6 +374,7 @@ const GolDemo = {
     },
 
     dispose() {
+        this.texture.dispose();
         clearScene();
         // Reset camera position for next demo
         camera.position.set(4, 3, 6);
@@ -402,7 +384,7 @@ const GolDemo = {
 };
 
 // --- Switching Logic ---
-async function loadDemo(name) {
+function loadDemo(name) {
     // Dispose current
     if (currentDemo && currentDemo.dispose) {
         currentDemo.dispose();
@@ -430,15 +412,14 @@ async function loadDemo(name) {
     }
     demo.init();
     currentDemo = demo;
-    demoName = name;
 }
 
 // --- Animation Loop ---
-let lastTime = 0;
+let lastTime;
 function animate(time) {
     requestAnimationFrame(animate);
 
-    const delta = Math.min((time - lastTime) / 1000, 0.05);
+    const delta = lastTime === undefined ? 0 : Math.min((time - lastTime) / 1000, 0.05);
     lastTime = time;
 
     if (currentDemo && currentDemo.update) {
@@ -449,18 +430,8 @@ function animate(time) {
     renderer.render(scene, camera);
 }
 
-// --- Start ---
-// Check if Three.js loaded
-if (typeof THREE === 'undefined') {
-    document.getElementById('error').style.display = 'block';
-} else {
-    // Load default demo
-    await loadDemo('matrix');
-    animate(0);
-}
-
-// Expose loadDemo globally for button onclick
-window.loadDemo = loadDemo;
+loadDemo('matrix');
+requestAnimationFrame(animate);
 
 // Button event listeners (also handle clicks)
 document.getElementById('btn-matrix').addEventListener('click', () => loadDemo('matrix'));
