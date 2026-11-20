@@ -14,8 +14,7 @@ https://zmath01.github.io/threejs-gadgets
 | 🏎️ F1 Systems Lab | Power unit & dynamics visualizer with engine/gearbox telemetry | [`f1-system-full.html`](f1-system-full.html) |
 | 🧊 Mental Rotation Trainer | Allocentric spatial trainer with rotation/timing scoring | [`mental-rotation-test.html`](mental-rotation-test.html) |
 | ✨ Compute Showcase | Matrix math, particle physics and Game of Life computed in JavaScript and rendered in WebGL | [`matrix-particles-game.html`](matrix-particles-game.html) |
-
-| 🚁 Drone Simulation | Flight path, state estimation, and control prediction | [`drone-simulation.html`](drone-simulation.html) |
+| <img src="drone-icon.svg" width="16" height="16" alt=""> Drone Simulation | Compare PD and MPC tracking with Kalman or ideal state feedback | [`drone-simulation.html`](drone-simulation.html) |
 
 ## Tech stack
 
@@ -24,7 +23,9 @@ https://zmath01.github.io/threejs-gadgets
 
 ## Development
 
-The demos are self-contained static HTML files. Open any `.html` file directly in a browser — no server or install required.
+Open a demo’s HTML file in a browser with the repository assets alongside it and a connection to the Three.js CDN.
+
+Run the flight control regression tests with `node --test tests/drone-control.test.cjs`.
 
 ## Deploy
 

@@ -3,221 +3,130 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>3D Drone Sim: Kalman Filter + MPC</title>
+    <title>Drone Flight Control</title>
+    <link rel="icon" href="drone-icon.svg" type="image/svg+xml">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        * { box-sizing: border-box; }
+        [hidden] { display: none !important; }
+        body { margin: 0; color: #e8edf5; background: #0a0e17; font: 14px/1.45 system-ui, sans-serif; }
+        main {
+            display: grid;
+            grid-template-columns: 355px minmax(0, 1fr);
+            grid-template-areas: "panel view";
+            height: 100vh;
+            height: 100dvh;
         }
-        body {
-            overflow: hidden;
-            font-family: 'Segoe UI', Arial, sans-serif;
-            background: #0a0e17;
-        }
-        canvas {
-            display: block;
-        }
-
-        #ui-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-        }
-
+        #flight-view { grid-area: view; position: relative; min-height: 0; overflow: hidden; }
+        canvas { display: block; width: 100%; height: 100%; }
+        #view-error { position: absolute; z-index: 1; inset: 1rem 1rem auto; padding: 1rem; background: #431f20; }
         #info-panel {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            color: #c8d6e5;
-            background: rgba(10, 14, 23, 0.82);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(100, 180, 255, 0.15);
-            border-radius: 14px;
-            padding: 18px 24px;
-            min-width: 220px;
-            pointer-events: auto;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-            font-size: 13px;
-            line-height: 1.6;
+            grid-area: panel;
+            min-width: 0;
+            overflow: auto;
+            padding: 18px;
+            background: #111826;
+            border-right: 1px solid #313e55;
         }
-        #info-panel h2 {
-            font-size: 15px;
-            font-weight: 600;
-            margin-bottom: 6px;
-            background: linear-gradient(135deg, #64b5f6, #42e695);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            letter-spacing: 0.5px;
+        h1, h2, p { margin: 0; }
+        h1 { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 1.3rem; }
+        h2 { font-size: 1rem; }
+        fieldset { min-width: 0; margin: 0; padding: 10px 12px 12px; border: 1px solid #3c4961; border-radius: 8px; }
+        legend { padding-inline: 4px; font-weight: 600; }
+        .choices, .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+        .choices label { display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 9px; border: 1px solid #3c4961; border-radius: 6px; }
+        .choices input { accent-color: #82ccff; margin: 0; }
+        .state-input { display: grid; gap: 4px; margin: 10px 0; }
+        button, select {
+            min-width: 0;
+            min-height: 36px;
+            padding: 5px 9px;
+            color: inherit;
+            font: inherit;
+            background: #1b293f;
+            border: 1px solid #506582;
+            border-radius: 6px;
         }
-        #info-panel .label {
-            color: #8899bb;
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        #info-panel .value {
-            color: #e8edf5;
-            font-weight: 500;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 13px;
-        }
-        #info-panel .row {
-            display: flex;
-            justify-content: space-between;
-            padding: 2px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-        }
-        #info-panel .row:last-child {
-            border-bottom: none;
-        }
-        .badge {
-            display: inline-block;
-            padding: 2px 10px;
-            border-radius: 20px;
-            font-size: 10px;
-            font-weight: 600;
-            letter-spacing: 0.3px;
-            margin-top: 4px;
-        }
-        .badge-kf {
-            background: rgba(100, 181, 246, 0.2);
-            color: #64b5f6;
-            border: 1px solid rgba(100, 181, 246, 0.3);
-        }
-        .badge-mpc {
-            background: rgba(66, 230, 149, 0.2);
-            color: #42e695;
-            border: 1px solid rgba(66, 230, 149, 0.3);
-        }
-
-        #status-bar {
-            position: absolute;
-            bottom: 30px;
-            left: 50%;
-            transform: translateX(-50%);
-            color: #8899bb;
-            background: rgba(10, 14, 23, 0.75);
-            backdrop-filter: blur(8px);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 30px;
-            padding: 10px 28px;
-            font-size: 12px;
-            letter-spacing: 0.3px;
-            pointer-events: auto;
-            display: flex;
-            gap: 24px;
-            align-items: center;
-            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
-        }
-        #status-bar .dot {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            margin-right: 6px;
-            animation: pulse-dot 1.4s ease-in-out infinite;
-        }
-        .dot.green {
-            background: #42e695;
-            box-shadow: 0 0 12px rgba(66, 230, 149, 0.3);
-        }
-        .dot.blue {
-            background: #64b5f6;
-            box-shadow: 0 0 12px rgba(100, 181, 246, 0.3);
-        }
-        @keyframes pulse-dot {
-            0%,
-            100% {
-                opacity: 1;
-                transform: scale(1);
+        button:enabled, select:enabled, .choices label { cursor: pointer; }
+        button:enabled:hover { background: #293c5a; }
+        button:disabled { opacity: .5; }
+        :focus-visible { outline: 2px solid #82ccff; outline-offset: 2px; }
+        .explanation, .legend { font-size: 12px; color: #aebed3; }
+        .explanation { margin-top: 8px; }
+        .trial-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-top: 16px; }
+        #trial-time, td { font-variant-numeric: tabular-nums; }
+        #trial-status { margin-top: 4px; color: #82ccff; font-size: 12px; }
+        table { width: 100%; margin-top: 10px; border-collapse: collapse; font-size: 12px; text-align: right; }
+        th, td { border-bottom: 1px solid #34425a; padding: 7px 3px; }
+        thead th { color: #aebed3; font-weight: 500; }
+        th:first-child { text-align: left; }
+        .swatch { display: inline-block; width: 10px; height: 8px; border-radius: 2px; }
+        tbody .swatch, .legend .swatch { margin-right: 4px; }
+        .pd { background: #ffad62; }
+        .mpc { background: #42e695; }
+        .reference { background: #ff6b6b; }
+        .measured { background: #ffd93d; }
+        .estimate { background: #64b5f6; }
+        #sensor-key .estimate { margin-left: 6px; }
+        .legend { list-style: none; margin: 12px 0 0; padding: 0; }
+        @media (max-width: 700px) {
+            main {
+                grid-template-columns: 1fr;
+                grid-template-rows: 42% minmax(0, 1fr);
+                grid-template-areas: "view" "panel";
             }
-            50% {
-                opacity: 0.5;
-                transform: scale(0.85);
-            }
-        }
-
-        #legend {
-            position: absolute;
-            bottom: 100px;
-            right: 30px;
-            color: #8899bb;
-            font-size: 11px;
-            background: rgba(10, 14, 23, 0.7);
-            backdrop-filter: blur(8px);
-            border-radius: 10px;
-            padding: 12px 16px;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            pointer-events: none;
-            line-height: 1.8;
-        }
-        #legend .swatch {
-            display: inline-block;
-            width: 14px;
-            height: 3px;
-            border-radius: 2px;
-            margin-right: 8px;
-            vertical-align: middle;
-        }
-
-        @media (max-width: 768px) {
-            #info-panel {
-                top: 12px;
-                left: 12px;
-                padding: 12px 16px;
-                min-width: 160px;
-                font-size: 11px;
-            }
-            #status-bar {
-                bottom: 16px;
-                padding: 8px 16px;
-                font-size: 10px;
-                gap: 12px;
-                flex-wrap: wrap;
-                justify-content: center;
-            }
-            #legend {
-                display: none;
-            }
+            #info-panel { border-right: 0; border-top: 1px solid #313e55; padding: 12px; }
         }
     </style>
 </head>
 <body>
 
-    <!-- UI Overlay -->
-    <div id="ui-overlay">
-        <div id="info-panel">
-            <h2>⚡ Drone and MPC preview</h2>
-            <div class="row"><span class="label">State</span><span class="value" id="state-display">🟢 Tracking</span></div>
-            <div class="row"><span class="label">KF Error</span><span class="value" id="kf-error">0.00 m</span></div>
-            <div class="row"><span class="label">MPC Horizon</span><span class="value" id="mpc-horizon">8 steps</span></div>
-            <div class="row"><span class="label">Speed</span><span class="value" id="speed-display">0.0 m/s</span></div>
-            <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
-                <span class="badge badge-kf">🔵 Kalman Filter</span>
-                <span class="badge badge-mpc">🟢 MPC preview</span>
+    <main>
+        <section id="flight-view" aria-label="3D flight view">
+            <p id="view-error" role="alert" hidden>The 3D view could not start. Check WebGL support and your connection.</p>
+        </section>
+        <aside id="info-panel" aria-labelledby="panel-title">
+            <h1 id="panel-title"><img src="drone-icon.svg" alt="" width="29" height="29"> Flight control</h1>
+            <fieldset id="config" disabled>
+                <legend>Controllers</legend>
+                <div class="choices">
+                    <label><input id="use-pd" type="checkbox" value="pd" checked> <span class="swatch pd"></span> PD</label>
+                    <label><input id="use-mpc" type="checkbox" value="mpc" checked> <span class="swatch mpc"></span> MPC</label>
+                </div>
+                <label class="state-input" for="estimator">State input
+                    <select id="estimator">
+                        <option value="kalman">Kalman estimate (noisy sensor)</option>
+                        <option value="ideal">Ideal state (simulation truth)</option>
+                    </select>
+                </label>
+                <div class="actions">
+                    <button id="pause-trial" type="button">Pause</button>
+                    <button id="restart-trial" type="button">Replay</button>
+                    <button id="use-path" type="button" disabled>Figure-8</button>
+                </div>
+            </fieldset>
+            <div class="trial-heading">
+                <h2>Trial results</h2>
+                <span id="trial-time">0.0 / 20 s</span>
             </div>
-        </div>
-
-        <div id="status-bar">
-            <span><span class="dot green"></span> Kalman Filter <span style="color:#42e695;font-weight:500;">active</span></span>
-            <span><span class="dot blue"></span> MPC <span style="color:#64b5f6;font-weight:500;">predicting</span></span>
-            <span style="color:#667;">|</span>
-            <span id="fps-display" style="color:#667;">FPS: 60</span>
-        </div>
-
-        <div id="legend">
-            <div>Double-click the ground to set a waypoint. R resumes the path.</div>
-            <div><span class="swatch" style="background:#ff6b6b;"></span> Reference path</div>
-            <div><span class="swatch" style="background:#ffd93d;"></span> Noisy measurements</div>
-            <div><span class="swatch" style="background:#64b5f6;"></span> KF estimate</div>
-            <div><span class="swatch" style="background:#42e695;"></span> MPC prediction</div>
-            <div><span class="swatch" style="background:rgba(100,181,246,0.15);border:1px solid rgba(100,181,246,0.3);"></span> Estimated position uncertainty (scaled)</div>
-        </div>
-    </div>
+            <p id="trial-status" role="status">Loading simulation…</p>
+            <table aria-label="Tracking and effort comparison">
+                <thead>
+                    <tr><th scope="col">Controller</th><th scope="col">RMS error<br>(m)</th><th scope="col">Peak error<br>(m)</th><th scope="col">RMS accel.<br>(m/s²)</th></tr>
+                </thead>
+                <tbody id="trial-results"></tbody>
+            </table>
+            <p class="explanation">Controllers share the same start, target, noise sequence, and acceleration limits. Changing the controls starts a fresh trial.</p>
+            <p class="explanation">PD uses position and velocity error. MPC plans 0.8 s ahead and applies the first command. With Kalman selected, each controller uses its own filtered estimate.</p>
+            <p id="estimation-result" class="explanation" hidden></p>
+            <ul class="legend" aria-label="Scene legend">
+                <li><span class="swatch reference"></span> <span id="reference-key">Figure-8 reference</span></li>
+                <li id="sensor-key"><span class="swatch measured"></span> Measurements <span class="swatch estimate"></span> Kalman estimate*</li>
+                <li id="prediction-key"><span class="swatch mpc"></span> Wireframe MPC forecast</li>
+            </ul>
+            <p id="sensor-detail" class="explanation">* Sensor overlays follow MPC when selected, otherwise PD.</p>
+            <p class="explanation">Drag to orbit. Double-click the ground for a waypoint. R returns to the figure-8, F toggles fullscreen.</p>
+        </aside>
+    </main>
 
     <!-- Three.js Import Map -->
     <script type="importmap">
@@ -229,10 +138,18 @@
         }
     </script>
 
+    <script src="drone-control.js"></script>
     <script type="module">
-        import * as THREE from 'three';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+        const flightView = document.getElementById('flight-view');
+        const [THREE, {OrbitControls}, {CSS2DRenderer, CSS2DObject}] = await Promise.all([
+            import('three'),
+            import('three/addons/controls/OrbitControls.js'),
+            import('three/addons/renderers/CSS2DRenderer.js'),
+        ]).catch(error => {
+            document.getElementById('view-error').hidden = false;
+            document.getElementById('trial-status').textContent = 'Simulation unavailable';
+            throw error;
+        });
 
         // ──────────────────────────────────────────────────────
         // 1. SCENE SETUP
@@ -241,27 +158,41 @@
         scene.background = new THREE.Color(0x0a0e17);
         scene.fog = new THREE.Fog(0x0a0e17, 40, 90);
 
-        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 150);
+        const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 150);
         camera.position.set(14, 10, 18);
         camera.lookAt(0, 2, 0);
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        let renderer;
+        try {
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+        } catch (error) {
+            document.getElementById('view-error').hidden = false;
+            document.getElementById('trial-status').textContent = 'Simulation unavailable';
+            throw error;
+        }
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         renderer.toneMappingExposure = 1.2;
-        document.body.prepend(renderer.domElement);
+        flightView.append(renderer.domElement);
 
         const labelRenderer = new CSS2DRenderer();
-        labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.domElement.addEventListener('webglcontextlost', event => {
+            event.preventDefault();
+            document.getElementById('view-error').hidden = false;
+            labelRenderer.domElement.hidden = true;
+        });
+        renderer.domElement.addEventListener('webglcontextrestored', () => {
+            document.getElementById('view-error').hidden = true;
+            labelRenderer.domElement.hidden = false;
+            sceneDirty = true;
+        });
         labelRenderer.domElement.style.position = 'absolute';
         labelRenderer.domElement.style.top = '0';
         labelRenderer.domElement.style.pointerEvents = 'none';
-        document.body.prepend(labelRenderer.domElement);
+        flightView.append(labelRenderer.domElement);
 
+        let sceneDirty = true;
         const controls = new OrbitControls(camera, renderer.domElement);
+        controls.addEventListener('change', () => { sceneDirty = true; });
         controls.enableDamping = true;
         controls.dampingFactor = 0.08;
         controls.target.set(0, 2.5, 0);
@@ -277,15 +208,6 @@
 
         const sun = new THREE.DirectionalLight(0xffeedd, 1.8);
         sun.position.set(15, 25, 10);
-        sun.castShadow = true;
-        sun.shadow.mapSize.width = 1024;
-        sun.shadow.mapSize.height = 1024;
-        sun.shadow.camera.near = 0.5;
-        sun.shadow.camera.far = 60;
-        sun.shadow.camera.left = -30;
-        sun.shadow.camera.right = 30;
-        sun.shadow.camera.top = 30;
-        sun.shadow.camera.bottom = -30;
         scene.add(sun);
 
         const fill = new THREE.DirectionalLight(0x4488ff, 0.5);
@@ -311,7 +233,6 @@
         const ground = new THREE.Mesh(groundGeo, groundMat);
         ground.rotation.x = -Math.PI / 2;
         ground.position.y = -0.05;
-        ground.receiveShadow = true;
         scene.add(ground);
 
         // Grid
@@ -347,7 +268,6 @@
             emissiveIntensity: 0.2,
         });
         const body = new THREE.Mesh(bodyGeo, bodyMat);
-        body.castShadow = true;
         body.scale.set(1, 0.7, 1.2);
         droneGroup.add(body);
 
@@ -375,16 +295,13 @@
             [-1.1, 0, -1.1],
             [1.1, 0, -1.1]
         ];
-        const arms = [];
         armPositions.forEach((pos) => {
             const armGeo = new THREE.CylinderGeometry(0.04, 0.06, 1.6, 6);
             const arm = new THREE.Mesh(armGeo, armMat);
             arm.position.set(pos[0], 0, pos[2]);
             arm.rotation.z = Math.atan2(pos[2], pos[0]);
             arm.rotation.x = Math.PI / 2;
-            arm.castShadow = true;
             droneGroup.add(arm);
-            arms.push(arm);
         });
 
         // Rotor assemblies
@@ -404,11 +321,7 @@
             side: THREE.DoubleSide,
         });
 
-        const rotors = [];
-        const rotorSpeeds = [1.0, 1.0, 1.0, 1.0];
-        const rotorGroups = [];
-
-        armPositions.forEach((pos, i) => {
+        armPositions.forEach(pos => {
             const group = new THREE.Group();
             group.position.set(pos[0], 0.12, pos[2]);
 
@@ -416,7 +329,6 @@
             const motorGeo = new THREE.CylinderGeometry(0.13, 0.15, 0.12, 12);
             const motor = new THREE.Mesh(motorGeo, rotorMat);
             motor.rotation.x = Math.PI / 2;
-            motor.castShadow = true;
             group.add(motor);
 
             // Blades
@@ -426,7 +338,6 @@
                 const blade = new THREE.Mesh(bladeGeo, bladeMat);
                 blade.position.x = 0.28;
                 blade.rotation.z = (j / 4) * Math.PI * 2;
-                blade.castShadow = true;
                 bladeGroup.add(blade);
             }
             // Blade center cap
@@ -437,8 +348,7 @@
 
             group.add(bladeGroup);
             droneGroup.add(group);
-            rotorGroups.push(bladeGroup);
-            rotors.push({ group: bladeGroup, speed: rotorSpeeds[i] });
+            bladeGroup.name = "blades";
         });
 
         // LED indicators
@@ -455,701 +365,315 @@
             droneGroup.add(led);
         });
 
-        droneGroup.position.set(0, 2.5, 0);
-        scene.add(droneGroup);
+        const {STEP, TRIAL_STEPS, HORIZON, PATH_STEPS, createTrial, referenceAt} = droneControl;
+        const trialDuration = TRIAL_STEPS * STEP;
+        const colors = {pd: 0xffad62, mpc: 0x42e695};
+        const names = {pd: 'PD', mpc: 'MPC'};
 
-        // ──────────────────────────────────────────────────────
-        // 5. PATH DEFINITION (Figure-8 + vertical variation)
-        // ──────────────────────────────────────────────────────
-        const PATH_PERIOD = 2 * Math.PI / 0.3;
-        const PATH_RATE = 0.35;
-        function getPathPoint(t) {
-            const scale = 5.5;
-            const x = Math.sin(t * 1.8) * scale;
-            const z = Math.sin(t * 0.9) * scale * 0.7;
-            const y = 2.2 + 1.2 * Math.sin(t * 1.2) * Math.cos(t * 0.6);
-            return new THREE.Vector3(x, y, z);
-        }
-
-        function getPathVelocity(t) {
-            return new THREE.Vector3(
-                5.5 * 1.8 * Math.cos(1.8 * t),
-                1.2 * (1.2 * Math.cos(1.2 * t) * Math.cos(0.6 * t) -
-                    0.6 * Math.sin(1.2 * t) * Math.sin(0.6 * t)),
-                5.5 * 0.7 * 0.9 * Math.cos(0.9 * t),
-            ).multiplyScalar(PATH_RATE);
-        }
-
-        // Precompute path
-        const pathPoints = [];
-        const numPathPoints = 300;
-        for (let i = 0; i < numPathPoints; i++) {
-            const t = (i / numPathPoints) * PATH_PERIOD;
-            pathPoints.push(getPathPoint(t));
-        }
-
-        // Path line
-        const pathGeo = new THREE.BufferGeometry().setFromPoints(pathPoints);
-        const pathMat = new THREE.LineBasicMaterial({
-            color: 0xff6b6b,
-            transparent: true,
-            opacity: 0.35,
-            linewidth: 1,
+        const pathPoints = Array.from({length: 301}, (_, i) => {
+            return new THREE.Vector3().fromArray(referenceAt(i / 300 * PATH_STEPS));
         });
-        const pathLine = new THREE.Line(pathGeo, pathMat);
-        scene.add(pathLine);
+        const referenceLine = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(pathPoints),
+            new THREE.LineBasicMaterial({color: 0xff6b6b, transparent: true, opacity: 0.55})
+        );
+        scene.add(referenceLine);
 
-        // Path glow
-        const pathGlowMat = new THREE.LineBasicMaterial({
-            color: 0xff6b6b,
-            transparent: true,
-            opacity: 0.08,
-        });
-        const pathGlow = new THREE.Line(pathGeo.clone(), pathGlowMat);
-        pathGlow.scale.set(1.02, 1.02, 1.02);
-        scene.add(pathGlow);
-
-        // Waypoint markers
-        const markerMat = new THREE.MeshBasicMaterial({ color: 0xff6b6b, transparent: true, opacity: 0.2 });
-        for (let i = 0; i < 12; i++) {
-            const t = (i / 12) * PATH_PERIOD;
-            const p = getPathPoint(t);
-            const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), markerMat);
-            sphere.position.copy(p);
-            scene.add(sphere);
+        function makeTrail(capacity, color, opacity) {
+            const geometry = new THREE.BufferGeometry();
+            const position = new THREE.BufferAttribute(new Float32Array(capacity * 3), 3)
+                .setUsage(THREE.DynamicDrawUsage);
+            geometry.setAttribute('position', position);
+            geometry.setDrawRange(0, 0);
+            const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({
+                color, opacity, transparent: opacity < 1,
+            }));
+            line.frustumCulled = false;
+            scene.add(line);
+            return {
+                line,
+                append(index, point) {
+                    position.setXYZ(index, point[0], point[1], point[2]);
+                    position.addUpdateRange(index * 3, 3);
+                    position.needsUpdate = true;
+                    geometry.setDrawRange(0, index + 1);
+                },
+                clear() {
+                    position.clearUpdateRanges();
+                    geometry.setDrawRange(0, 0);
+                },
+            };
         }
 
-        // ──────────────────────────────────────────────────────
-        // 6. KALMAN FILTER
-        // ──────────────────────────────────────────────────────
-        class KalmanFilter {
-            constructor() {
-                // State: [x, y, z, vx, vy, vz]
-                this.x = new Float64Array([0, 2.5, 0, 0, 0, 0]);
-                this.P = new Float64Array(36);
-                // Initialize P as identity
-                for (let i = 0; i < 6; i++) this.P[i * 6 + i] = 1.0;
-
-                // Process noise (Q)
-                this.Q = new Float64Array(36);
-                for (let i = 0; i < 6; i++) this.Q[i * 6 + i] = 0.02;
-
-                // Measurement noise (R)
-                this.R = new Float64Array(9);
-                for (let i = 0; i < 3; i++) this.R[i * 3 + i] = 0.15;
-
-                this.dt = 0.016;
-
-                // State transition matrix A
-                this.A = new Float64Array(36);
-
-                this._updateA();
-            }
-
-            _updateA() {
-                const dt = this.dt;
-                for (let i = 0; i < 36; i++) this.A[i] = 0;
-                // Position -> position
-                for (let i = 0; i < 3; i++) this.A[i * 6 + i] = 1;
-                // Velocity -> position
-                for (let i = 0; i < 3; i++) this.A[i * 6 + 3 + i] = dt;
-                // Velocity -> velocity
-                for (let i = 0; i < 3; i++) this.A[(3 + i) * 6 + 3 + i] = 1;
-            }
-
-            predict(control = null) {
-                this._updateA();
-                // x = A * x
-                const newX = new Float64Array(6);
-                for (let i = 0; i < 6; i++) {
-                    let sum = 0;
-                    for (let j = 0; j < 6; j++) sum += this.A[i * 6 + j] * this.x[j];
-                    newX[i] = sum;
-                }
-                // Apply control (acceleration) if provided
-                if (control) {
-                    for (let i = 0; i < 3; i++) {
-                        newX[3 + i] += control[i] * this.dt;
-                    }
-                }
-                this.x.set(newX);
-
-                // P = A * P * A^T + Q
-                const AP = new Float64Array(36);
-                for (let i = 0; i < 6; i++) {
-                    for (let j = 0; j < 6; j++) {
-                        let sum = 0;
-                        for (let k = 0; k < 6; k++) sum += this.A[i * 6 + k] * this.P[k * 6 + j];
-                        AP[i * 6 + j] = sum;
-                    }
-                }
-                const APAT = new Float64Array(36);
-                for (let i = 0; i < 6; i++) {
-                    for (let j = 0; j < 6; j++) {
-                        let sum = 0;
-                        for (let k = 0; k < 6; k++) sum += AP[i * 6 + k] * this.A[j * 6 + k];
-                        APAT[i * 6 + j] = sum;
-                    }
-                }
-                for (let i = 0; i < 36; i++) {
-                    this.P[i] = APAT[i] + this.Q[i];
-                }
-            }
-
-            update(measurement) {
-                // H selects position, so S is the leading 3×3 block of P plus R.
-                const S = new Float64Array(9);
-                for (let i = 0; i < 3; i++) {
-                    for (let j = 0; j < 3; j++) S[i * 3 + j] = this.P[i * 6 + j] + this.R[i * 3 + j];
-                }
-                const invS = this._invert3x3(S);
-                const K = new Float64Array(18);
-                for (let i = 0; i < 6; i++) {
-                    for (let j = 0; j < 3; j++) {
-                        for (let k = 0; k < 3; k++) K[i * 3 + j] += this.P[i * 6 + k] * invS[k * 3 + j];
-                    }
-                }
-
-                const innovation = measurement.map((value, i) => value - this.x[i]);
-                for (let i = 0; i < 6; i++) {
-                    for (let j = 0; j < 3; j++) this.x[i] += K[i * 3 + j] * innovation[j];
-                }
-
-                // P ← P − KHP. Compute one triangle to preserve symmetry in floating point.
-                const newP = new Float64Array(36);
-                for (let i = 0; i < 6; i++) {
-                    for (let j = i; j < 6; j++) {
-                        let value = this.P[i * 6 + j];
-                        for (let k = 0; k < 3; k++) value -= K[i * 3 + k] * this.P[k * 6 + j];
-                        newP[i * 6 + j] = newP[j * 6 + i] = value;
-                    }
-                }
-                this.P.set(newP);
-            }
-
-            _invert3x3(m) {
-                const det = m[0] * (m[4] * m[8] - m[5] * m[7]) -
-                    m[1] * (m[3] * m[8] - m[5] * m[6]) +
-                    m[2] * (m[3] * m[7] - m[4] * m[6]);
-                const inv = new Float64Array(9);
-                inv[0] = (m[4] * m[8] - m[5] * m[7]) / det;
-                inv[1] = (m[2] * m[7] - m[1] * m[8]) / det;
-                inv[2] = (m[1] * m[5] - m[2] * m[4]) / det;
-                inv[3] = (m[5] * m[6] - m[3] * m[8]) / det;
-                inv[4] = (m[0] * m[8] - m[2] * m[6]) / det;
-                inv[5] = (m[2] * m[3] - m[0] * m[5]) / det;
-                inv[6] = (m[3] * m[7] - m[4] * m[6]) / det;
-                inv[7] = (m[6] * m[1] - m[0] * m[7]) / det;
-                inv[8] = (m[0] * m[4] - m[1] * m[3]) / det;
-                return inv;
-            }
-
-            getPosition() {
-                return new THREE.Vector3(this.x[0], this.x[1], this.x[2]);
-            }
-
-            getVelocity() {
-                return new THREE.Vector3(this.x[3], this.x[4], this.x[5]);
-            }
-
-            getCovariance() {
-                // Return position covariance (3x3)
-                const cov = new Float64Array(9);
-                for (let i = 0; i < 3; i++) {
-                    for (let j = 0; j < 3; j++) {
-                        cov[i * 3 + j] = this.P[i * 6 + j];
-                    }
-                }
-                return cov;
-            }
-        }
-
-        // ──────────────────────────────────────────────────────
-        // 7. MPC CONTROLLER
-        // ──────────────────────────────────────────────────────
-        class MPCController {
-            constructor() {
-                this.N = 8; // Prediction horizon
-                this.dt = 0.06;
-                this.positionWeight = 4;
-                this.controlWeight = 0.5;
-                this.maxAccel = 3;
-                this.controls = new Float64Array(this.N * 3);
-                this.positions = new Float64Array((this.N + 1) * 3);
-                this.predictedTrajectory = Array.from({length: this.N}, () => new THREE.Vector3());
-            }
-
-            predict(state) {
-                const {dt, N, positions, controls} = this;
-                positions.set(state.slice(0, 3), 0);
-                for (let axis = 0; axis < 3; axis++) {
-                    let velocity = state[3 + axis];
-                    for (let k = 0; k < N; k++) {
-                        const i = k * 3 + axis;
-                        positions[i + 3] = positions[i] + velocity * dt;
-                        velocity += controls[i] * dt;
-                    }
-                }
-            }
-
-            computeControl(state, reference) {
-                const {dt, N, positions, controls, maxAccel} = this;
-                controls.fill(0);
-                for (let iteration = 0; iteration < 12; iteration++) {
-                    this.predict(state);
-                    // Reverse the linear dynamics to differentiate the quadratic cost in O(N).
-                    for (let axis = 0; axis < 3; axis++) {
-                        let dPosition = 0;
-                        let dVelocity = 0;
-                        for (let k = N - 1; k >= 0; k--) {
-                            const i = k * 3 + axis;
-                            dPosition += 2 * this.positionWeight * (positions[i + 3] - reference[k + 1][axis]);
-                            const gradient = 2 * this.controlWeight * controls[i] + dVelocity * dt;
-                            controls[i] = Math.max(-maxAccel, Math.min(maxAccel, controls[i] - 0.02 * gradient));
-                            dVelocity += dPosition * dt;
-                        }
-                    }
-                }
-
-                this.predict(state);
-                this.predictedTrajectory.forEach((point, i) => point.fromArray(positions, (i + 1) * 3));
-            }
-        }
-
-        // ──────────────────────────────────────────────────────
-        // 8. VISUALIZATION HELPERS
-        // ──────────────────────────────────────────────────────
-        // Covariance ellipsoid
-        function createCovarianceEllipsoid() {
-            const group = new THREE.Group();
-            const geo = new THREE.SphereGeometry(1, 24, 24);
-            const mat = new THREE.MeshBasicMaterial({
-                color: 0x64b5f6,
-                transparent: true,
-                opacity: 0.12,
-                wireframe: false,
-                depthWrite: false,
+        const footprintGeometry = new THREE.RingGeometry(0.32, 0.42, 18);
+        const views = Object.fromEntries(Object.keys(colors).map(algorithm => {
+            const color = colors[algorithm];
+            const model = droneGroup.clone(true);
+            model.children[0].material = bodyMat.clone();
+            model.children[0].material.color.setHex(color);
+            model.children[0].material.emissive.setHex(color);
+            model.children[1].material = glowMat.clone();
+            model.children[1].material.color.setHex(color);
+            const blades = [];
+            model.traverse(child => {
+                if (child.name === 'blades') blades.push(child);
             });
-            const mesh = new THREE.Mesh(geo, mat);
-            group.add(mesh);
+            scene.add(model);
+            const label = document.createElement('span');
+            label.textContent = names[algorithm];
+            label.style.cssText = 'padding:2px 6px;border-radius:5px;background:#0a0e17;font:bold 12px system-ui';
+            label.style.color = '#' + color.toString(16);
+            const marker = new CSS2DObject(label);
+            marker.position.set(0, 0.75, 0);
+            model.add(marker);
+            const trail = makeTrail(TRIAL_STEPS + 1, color, 0.85);
+            const footprint = new THREE.Mesh(footprintGeometry, new THREE.MeshBasicMaterial({
+                color, transparent: true, opacity: 0.6, side: THREE.DoubleSide,
+            }));
+            footprint.rotation.x = -Math.PI / 2;
+            scene.add(footprint);
+            return [algorithm, {model, blades, trail, footprint}];
+        }));
 
-            const wireMat = new THREE.MeshBasicMaterial({
-                color: 0x64b5f6,
-                transparent: true,
-                opacity: 0.2,
-                wireframe: true,
-                depthWrite: false,
-            });
-            const wire = new THREE.Mesh(geo.clone(), wireMat);
-            wire.scale.set(1.01, 1.01, 1.01);
-            group.add(wire);
+        const measurementTrail = makeTrail(TRIAL_STEPS + 1, 0xffd93d, 0.38);
+        const estimateTrail = makeTrail(TRIAL_STEPS + 1, 0x64b5f6, 0.6);
+        const uncertainty = new THREE.Mesh(
+            new THREE.SphereGeometry(1, 18, 12),
+            new THREE.MeshBasicMaterial({color: 0x64b5f6, transparent: true, opacity: 0.15, depthWrite: false})
+        );
+        scene.add(uncertainty);
 
-            group.visible = false;
-            scene.add(group);
-            return group;
-        }
-
-        function updateCovarianceEllipsoid(group, pos, cov, scale = 1.0) {
-            // Independent Cartesian axes in this model make the covariance diagonal.
-            const m = cov;
-            const rx = Math.sqrt(Math.max(0, m[0])) * 1.5 * scale;
-            const ry = Math.sqrt(Math.max(0, m[4])) * 1.5 * scale;
-            const rz = Math.sqrt(Math.max(0, m[8])) * 1.5 * scale;
-
-            // Clamp for visibility
-            const maxR = 2.5;
-            const minR = 0.05;
-            const sx = Math.max(minR, Math.min(maxR, rx));
-            const sy = Math.max(minR, Math.min(maxR, ry));
-            const sz = Math.max(minR, Math.min(maxR, rz));
-
-            group.position.copy(pos);
-            group.scale.set(sx, sy, sz);
-            group.visible = true;
-        }
-
-        // Trail
-        const trailPoints = [];
-        const trailMax = 120;
-        const trailMat = new THREE.LineBasicMaterial({
-            color: 0x64b5f6,
-            transparent: true,
-            opacity: 0.35,
+        const forecastGeometry = new THREE.OctahedronGeometry(0.15);
+        const forecastMaterial = new THREE.MeshBasicMaterial({
+            color: colors.mpc, transparent: true, opacity: 0.5, wireframe: true,
         });
-        const trailGeo = new THREE.BufferGeometry();
-        const trailPositions = new Float32Array(trailMax * 3);
-        trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
-        trailGeo.setDrawRange(0, 0);
-        const trailLine = new THREE.Line(trailGeo, trailMat);
-        scene.add(trailLine);
-
-        // Measurement trail (noisy)
-        const measTrailPoints = [];
-        const measTrailMat = new THREE.LineBasicMaterial({
-            color: 0xffd93d,
-            transparent: true,
-            opacity: 0.2,
+        const forecast = new THREE.Group();
+        const ghosts = Array.from({length: HORIZON}, () => {
+            const mesh = new THREE.Mesh(forecastGeometry, forecastMaterial);
+            forecast.add(mesh);
+            return mesh;
         });
-        const measTrailGeo = new THREE.BufferGeometry();
-        const measTrailPos = new Float32Array(trailMax * 3);
-        measTrailGeo.setAttribute('position', new THREE.BufferAttribute(measTrailPos, 3));
-        measTrailGeo.setDrawRange(0, 0);
-        const measTrailLine = new THREE.Line(measTrailGeo, measTrailMat);
-        scene.add(measTrailLine);
+        scene.add(forecast);
+        const predictionTrail = makeTrail(HORIZON, colors.mpc, 0.45);
+        forecast.add(predictionTrail.line);
 
-        // MPC prediction visualization (ghost drones)
-        const ghostGroup = new THREE.Group();
-        const ghostMat = new THREE.MeshBasicMaterial({
-            color: 0x42e695,
-            transparent: true,
-            opacity: 0.15,
-            wireframe: true,
-        });
-        const ghostBody = new THREE.Mesh(new THREE.OctahedronGeometry(0.25, 1), ghostMat);
-        const ghostMat2 = new THREE.MeshBasicMaterial({
-            color: 0x42e695,
-            transparent: true,
-            opacity: 0.08,
-            wireframe: true,
-        });
-        const ghostBody2 = new THREE.Mesh(new THREE.OctahedronGeometry(0.35, 1), ghostMat2);
+        const groundMarker = new THREE.Mesh(
+            new THREE.RingGeometry(0.15, 0.28, 24),
+            new THREE.MeshBasicMaterial({color: 0xff6b6b, side: THREE.DoubleSide})
+        );
+        groundMarker.rotation.x = -Math.PI / 2;
+        groundMarker.visible = false;
+        scene.add(groundMarker);
 
-        const ghostDrones = [];
-        for (let i = 0; i < 8; i++) {
-            const g = new THREE.Group();
-            const b1 = ghostBody.clone();
-            const b2 = ghostBody2.clone();
-            b1.material = b1.material.clone();
-            b2.material = b2.material.clone();
-            g.add(b1);
-            g.add(b2);
-            g.visible = false;
-            ghostGroup.add(g);
-            ghostDrones.push(g);
-        }
-        scene.add(ghostGroup);
-
-        // MPC prediction line
-        const predLineMat = new THREE.LineBasicMaterial({
-            color: 0x42e695,
-            transparent: true,
-            opacity: 0.2,
-        });
-        const predLineGeo = new THREE.BufferGeometry();
-        const predLinePos = new Float32Array(8 * 3);
-        predLineGeo.setAttribute('position', new THREE.BufferAttribute(predLinePos, 3));
-        predLineGeo.setDrawRange(0, 0);
-        const predLine = new THREE.Line(predLineGeo, predLineMat);
-        scene.add(predLine);
-
-        // ──────────────────────────────────────────────────────
-        // 9. SIMULATION STATE
-        // ──────────────────────────────────────────────────────
-        const kf = new KalmanFilter();
-        const mpc = new MPCController();
-
-        // True state
-        let truePos = new THREE.Vector3(0, 2.5, 0);
-        let trueVel = new THREE.Vector3(1, 0.2, 0.5);
-        let pathT = 0;
+        const config = document.getElementById('config');
+        const controllerInputs = Array.from(config.querySelectorAll('input[type="checkbox"]'));
+        const estimator = document.getElementById('estimator');
+        const pause = document.getElementById('pause-trial');
+        const replay = document.getElementById('restart-trial');
+        const usePath = document.getElementById('use-path');
+        const resultBody = document.getElementById('trial-results');
+        const timeDisplay = document.getElementById('trial-time');
+        const status = document.getElementById('trial-status');
+        const estimateResult = document.getElementById('estimation-result');
+        const sensorKey = document.getElementById('sensor-key');
+        const sensorDetail = document.getElementById('sensor-detail');
+        const predictionKey = document.getElementById('prediction-key');
+        const referenceKey = document.getElementById('reference-key');
+        const metrics = new Map();
+        const velocity = new THREE.Vector3();
+        const lookTarget = new THREE.Vector3();
         let waypoint = null;
+        let trial;
+        let isPaused = false;
+        let accumulator = 0;
+        let lastMetrics = 0;
 
-        // For measurements
-        const measNoise = 0.12;
-
-        // Covariance ellipsoid
-        const covEllipsoid = createCovarianceEllipsoid();
-
-        // Labels
-        const labelGroup = new THREE.Group();
-        scene.add(labelGroup);
-
-        function createLabel(text, color = '#64b5f6', offset = new THREE.Vector3(0, 0.8, 0)) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            div.style.color = color;
-            div.style.fontSize = '10px';
-            div.style.fontWeight = '500';
-            div.style.textShadow = '0 0 12px rgba(0,0,0,0.8), 0 2px 8px rgba(0,0,0,0.5)';
-            div.style.background = 'rgba(10,14,23,0.5)';
-            div.style.padding = '2px 10px';
-            div.style.borderRadius = '12px';
-            div.style.backdropFilter = 'blur(4px)';
-            div.style.border = '1px solid rgba(255,255,255,0.05)';
-            div.style.fontFamily = "'Segoe UI', sans-serif";
-            div.style.letterSpacing = '0.3px';
-            const label = new CSS2DObject(div);
-            label.userData.offset = offset.clone();
-            labelGroup.add(label);
-            return label;
+        function setStatus() {
+            const complete = trial.steps === TRIAL_STEPS;
+            pause.disabled = complete;
+            pause.textContent = isPaused ? 'Resume' : 'Pause';
+            const progress = complete ? 'Complete' : isPaused ? 'Paused' : 'Running';
+            status.textContent = progress + ' · ' + (waypoint ? 'Waypoint' : 'Figure-8');
         }
 
-        const kfLabel = createLabel('KF Estimate', '#64b5f6', new THREE.Vector3(0, 1.0, 0));
-        const trueLabel = createLabel('True Path', '#ff6b6b', new THREE.Vector3(0, 1.0, 0));
-        const mpcLabel = createLabel('MPC Prediction', '#42e695', new THREE.Vector3(0, 0.7, 0));
-
-        // ──────────────────────────────────────────────────────
-        // 10. MAIN LOOP
-        // ──────────────────────────────────────────────────────
-        let clock = new THREE.Clock();
-        let frameCount = 0;
-        let fpsTime = 0;
-        let fps = 60;
-
-        function animate() {
-            const delta = Math.min(clock.getDelta(), 0.05);
-            const time = performance.now() / 1000;
-
-            // FPS
-            frameCount++;
-            if (time - fpsTime > 0.5) {
-                fps = Math.round(frameCount / (time - fpsTime));
-                frameCount = 0;
-                fpsTime = time;
-                document.getElementById('fps-display').textContent = `FPS: ${fps}`;
+        function startTrial() {
+            const algorithms = controllerInputs.filter(input => input.checked).map(input => input.value);
+            const useKalman = estimator.value === 'kalman';
+            trial = createTrial(algorithms, useKalman, waypoint);
+            isPaused = false;
+            accumulator = 0;
+            lastMetrics = 0;
+            usePath.disabled = !waypoint;
+            referenceKey.textContent = waypoint ? 'Waypoint' : 'Figure-8 reference';
+            referenceLine.visible = !waypoint;
+            groundMarker.visible = Boolean(waypoint);
+            sensorKey.hidden = sensorDetail.hidden = estimateResult.hidden = !useKalman;
+            predictionKey.hidden = !algorithms.includes('mpc');
+            measurementTrail.clear();
+            estimateTrail.clear();
+            predictionTrail.clear();
+            for (const input of controllerInputs) input.disabled = algorithms.length === 1 && input.checked;
+            for (const [algorithm, view] of Object.entries(views)) {
+                view.model.visible = view.trail.line.visible = view.footprint.visible = algorithms.includes(algorithm);
+                view.trail.clear();
             }
-
-            // ── Update path parameter ──
-            if (!waypoint) pathT = (pathT + delta * PATH_RATE) % PATH_PERIOD;
-
-            // ── True state ──
-            const refPos = waypoint || getPathPoint(pathT);
-            const refVel = waypoint ? new THREE.Vector3() : getPathVelocity(pathT);
-
-            // Simple true dynamics (follow path with some inertia)
-            const followStrength = 3.5;
-            const error = new THREE.Vector3().copy(refPos).sub(truePos);
-            const velError = new THREE.Vector3().copy(refVel).sub(trueVel);
-            const accel = new THREE.Vector3()
-                .copy(error).multiplyScalar(followStrength)
-                .add(velError.multiplyScalar(1.2));
-            accel.clampLength(0, 4.0);
-
-            trueVel.add(accel.multiplyScalar(delta));
-            trueVel.multiplyScalar(0.98 ** (60 * delta));
-            truePos.add(trueVel.clone().multiplyScalar(delta));
-
-            // ── Measurements (noisy) ──
-            const meas = new THREE.Vector3(
-                truePos.x + (Math.random() - 0.5) * measNoise * 1.6,
-                truePos.y + (Math.random() - 0.5) * measNoise * 1.6,
-                truePos.z + (Math.random() - 0.5) * measNoise * 1.6,
-            );
-
-            // ── Kalman Filter ──
-            kf.dt = delta;
-            kf.predict(null);
-            kf.update([meas.x, meas.y, meas.z]);
-            const kfPos = kf.getPosition();
-            const kfVel = kf.getVelocity();
-
-            // ── MPC ──
-            // Build reference trajectory for prediction horizon
-            const refStates = [];
-            for (let i = 0; i <= mpc.N; i++) {
-                const p = waypoint || getPathPoint(pathT + i * mpc.dt * PATH_RATE);
-                refStates.push([p.x, p.y, p.z]);
+            resultBody.replaceChildren();
+            metrics.clear();
+            for (const run of trial.runs) {
+                const row = resultBody.insertRow();
+                row.dataset.controller = run.algorithm;
+                const header = document.createElement('th');
+                const swatch = document.createElement('span');
+                swatch.classList.add('swatch', run.algorithm);
+                header.scope = 'row';
+                header.append(swatch, names[run.algorithm]);
+                row.append(header);
+                metrics.set(run.algorithm, Array.from({length: 3}, () => row.insertCell()));
             }
-            const mpcState = new Float32Array([
-                kfPos.x, kfPos.y, kfPos.z,
-                kfVel.x, kfVel.y, kfVel.z
-            ]);
-            mpc.computeControl(mpcState, refStates);
+            drawState();
+            showMetrics();
+            setStatus();
+        }
 
-            // The rendered drone is the simulated plant. MPC shows a candidate trajectory.
-            droneGroup.position.copy(truePos);
-
-            // ── Update drone orientation ──
-            const lookTarget = droneGroup.position.clone().add(trueVel.clone().normalize().multiplyScalar(2));
-            if (trueVel.length() > 0.05) {
-                droneGroup.lookAt(lookTarget);
-                // Add slight tilt
-                const tilt = Math.min(trueVel.length() * 0.06, 0.15);
-                droneGroup.rotation.z = -tilt * 0.3;
-                droneGroup.rotation.x = tilt * 0.1;
-            }
-
-            // ── Rotor animation ──
-            const rotorSpeed = 8 + trueVel.length() * 1.5;
-            rotorGroups.forEach((g, i) => {
-                g.rotation.y += rotorSpeed * delta * (1 + i * 0.05);
-            });
-
-            // ── Update covariance ellipsoid ──
-            const cov = kf.getCovariance();
-            updateCovarianceEllipsoid(covEllipsoid, kfPos, cov, 0.8);
-
-            // ── Update trail ──
-            trailPoints.push(kfPos.clone());
-            if (trailPoints.length > trailMax) trailPoints.shift();
-            const trailArr = trailLine.geometry.attributes.position.array;
-            const count = Math.min(trailPoints.length, trailMax);
-            for (let i = 0; i < count; i++) {
-                const idx = i * 3;
-                const p = trailPoints[i];
-                trailArr[idx] = p.x;
-                trailArr[idx + 1] = p.y;
-                trailArr[idx + 2] = p.z;
-            }
-            trailLine.geometry.attributes.position.needsUpdate = true;
-            trailLine.geometry.setDrawRange(0, count);
-
-            // ── Measurement trail ──
-            measTrailPoints.push(meas.clone());
-            if (measTrailPoints.length > trailMax) measTrailPoints.shift();
-            const mArr = measTrailLine.geometry.attributes.position.array;
-            const mCount = Math.min(measTrailPoints.length, trailMax);
-            for (let i = 0; i < mCount; i++) {
-                const idx = i * 3;
-                const p = measTrailPoints[i];
-                mArr[idx] = p.x;
-                mArr[idx + 1] = p.y;
-                mArr[idx + 2] = p.z;
-            }
-            measTrailLine.geometry.attributes.position.needsUpdate = true;
-            measTrailLine.geometry.setDrawRange(0, mCount);
-
-            // ── MPC ghost drones ──
-            const pred = mpc.predictedTrajectory;
-            ghostDrones.forEach((g, i) => {
-                if (i < pred.length) {
-                    g.position.copy(pred[i]);
-                    g.visible = true;
-                    const alpha = 1 - i / pred.length;
-                    g.children.forEach(child => {
-                        child.material.opacity = 0.08 + alpha * 0.15;
+        function drawState() {
+            sceneDirty = true;
+            for (const run of trial.runs) {
+                const {model, blades, trail, footprint} = views[run.algorithm];
+                model.position.fromArray(run.state);
+                footprint.position.set(model.position.x, 0.02, model.position.z);
+                velocity.fromArray(run.state, 3);
+                if (velocity.lengthSq() > 0.0025) model.lookAt(lookTarget.copy(model.position).add(velocity));
+                if (trial.steps) {
+                    blades.forEach((blade, i) => {
+                        blade.rotation.y += (8 + velocity.length() * 1.5) * STEP * (1 + i * 0.05);
                     });
-                    const s = 0.5 + 0.5 * (1 - i / pred.length);
-                    g.scale.set(s, s, s);
-                } else {
-                    g.visible = false;
                 }
-            });
-
-            // ── MPC prediction line ──
-            if (pred.length > 1) {
-                const pArr = predLine.geometry.attributes.position.array;
-                for (let i = 0; i < Math.min(pred.length, 8); i++) {
-                    const idx = i * 3;
-                    pArr[idx] = pred[i].x;
-                    pArr[idx + 1] = pred[i].y;
-                    pArr[idx + 2] = pred[i].z;
-                }
-                predLine.geometry.attributes.position.needsUpdate = true;
-                predLine.geometry.setDrawRange(0, Math.min(pred.length, 8));
-                predLine.visible = true;
-            } else {
-                predLine.visible = false;
+                trail.append(trial.steps, run.state);
             }
 
-            // ── Update labels ──
-            const labelPositions = [
-                { label: kfLabel, pos: kfPos, color: '#64b5f6' },
-                { label: trueLabel, pos: truePos, color: '#ff6b6b' },
-                { label: mpcLabel, pos: pred.length > 0 ? pred[0] : kfPos, color: '#42e695' },
-            ];
-            labelPositions.forEach(({ label, pos, color }) => {
-                const offset = label.userData.offset;
-                label.position.set(pos.x + offset.x, pos.y + offset.y, pos.z + offset.z);
-                // Update color
-                label.element.style.color = color;
-            });
+            const mpcRun = trial.runs.find(run => run.mpc);
+            const focused = mpcRun ?? trial.runs[0];
+            const filter = focused.filter;
+            uncertainty.visible = measurementTrail.line.visible = estimateTrail.line.visible = Boolean(filter);
+            if (filter) {
+                measurementTrail.append(trial.steps, focused.measurement);
+                estimateTrail.append(trial.steps, filter.state);
+                uncertainty.position.fromArray(filter.state);
+                const [x, y, z] = filter.positionVariance;
+                uncertainty.scale.set(2 * Math.sqrt(x), 2 * Math.sqrt(y), 2 * Math.sqrt(z));
+            }
 
-            // ── Update UI ──
-            const errorMag = truePos.distanceTo(kfPos);
-            document.getElementById('kf-error').textContent = errorMag.toFixed(2) + ' m';
-            const speed = trueVel.length();
-            document.getElementById('speed-display').textContent = speed.toFixed(1) + ' m/s';
-            document.getElementById('mpc-horizon').textContent = mpc.N + ' steps';
-
-            // ── Render ──
-            controls.update();
-            renderer.render(scene, camera);
-            labelRenderer.render(scene, camera);
-            requestAnimationFrame(animate);
+            forecast.visible = Boolean(mpcRun && trial.steps);
+            if (forecast.visible) {
+                predictionTrail.clear();
+                ghosts.forEach((ghost, i) => {
+                    ghost.position.fromArray(mpcRun.mpc.rollout, (i + 1) * 3);
+                    predictionTrail.append(i, [ghost.position.x, ghost.position.y, ghost.position.z]);
+                });
+            }
         }
 
-        // ──────────────────────────────────────────────────────
-        // 11. RESIZE
-        // ──────────────────────────────────────────────────────
-        window.addEventListener('resize', () => {
-            const w = window.innerWidth;
-            const h = window.innerHeight;
-            camera.aspect = w / h;
-            camera.updateProjectionMatrix();
-            renderer.setSize(w, h);
-            labelRenderer.setSize(w, h);
+        function showMetrics() {
+            const steps = trial.steps;
+            timeDisplay.textContent = (steps * STEP).toFixed(1) + ' / ' + trialDuration + ' s';
+            for (const run of trial.runs) {
+                const values = [
+                    Math.sqrt(run.errorSquared / steps),
+                    run.peakError,
+                    Math.sqrt(run.effortSquared / steps),
+                ];
+                metrics.get(run.algorithm).forEach((cell, i) => {
+                    cell.textContent = steps ? values[i].toFixed(3) : '—';
+                });
+            }
+            estimateResult.textContent = steps ? 'Kalman position RMS · ' + trial.runs
+                .map(run => names[run.algorithm] + ' ' + Math.sqrt(run.estimateErrorSquared / steps).toFixed(3) + ' m')
+                .join(' · ') : '';
+        }
+
+        function returnToPath() {
+            waypoint = null;
+            startTrial();
+        }
+
+        controllerInputs.forEach(input => input.addEventListener('change', startTrial));
+        estimator.addEventListener('change', startTrial);
+        replay.addEventListener('click', startTrial);
+        usePath.addEventListener('click', returnToPath);
+        pause.addEventListener('click', () => {
+            isPaused = !isPaused;
+            accumulator = 0;
+            showMetrics();
+            setStatus();
         });
 
-        // ──────────────────────────────────────────────────────
-        // 12. START
-        // ──────────────────────────────────────────────────────
-        animate();
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2();
+        renderer.domElement.addEventListener('dblclick', event => {
+            const rect = renderer.domElement.getBoundingClientRect();
+            pointer.set(2 * (event.clientX - rect.left) / rect.width - 1,
+                1 - 2 * (event.clientY - rect.top) / rect.height);
+            raycaster.setFromCamera(pointer, camera);
+            const [hit] = raycaster.intersectObject(ground);
+            if (!hit) return;
+            waypoint = [hit.point.x, 2, hit.point.z];
+            groundMarker.position.set(hit.point.x, 0.04, hit.point.z);
+            startTrial();
+        });
 
-        console.log('🚁 Drone Simulation with Kalman Filter + MPC');
-        console.log('📊 Kalman Filter: Active | MPC: Active | Horizon: 8 steps');
-        console.log('🔄 Drag to orbit • Scroll to zoom');
-
-        // ──────────────────────────────────────────────────────
-        // 13. KEYBOARD SHORTCUTS (fun)
-        // ──────────────────────────────────────────────────────
-        window.addEventListener('keydown', (e) => {
-            if (e.key === 'r' || e.key === 'R') {
-                waypoint = null;
-                document.getElementById('state-display').textContent = 'Tracking path';
-                // Reset view
+        window.addEventListener('keydown', event => {
+            if (event.target.closest?.('input, select, button') || event.ctrlKey || event.metaKey || event.altKey) return;
+            if (event.key.toLowerCase() === 'r') {
                 camera.position.set(14, 10, 18);
                 controls.target.set(0, 2.5, 0);
                 controls.update();
+                returnToPath();
             }
-            if (e.key === 'f' || e.key === 'F') {
-                // Toggle fullscreen
-                if (!document.fullscreenElement) {
-                    document.body.requestFullscreen().catch(() => {});
-                } else {
-                    document.exitFullscreen().catch(() => {});
+            if (event.key.toLowerCase() === 'f') {
+                if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+                else document.body.requestFullscreen?.().catch(() => {});
+            }
+        });
+
+        function resize() {
+            const {clientWidth: width, clientHeight: height} = flightView;
+            if (!width || !height) return;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setSize(width, height, false);
+            labelRenderer.setSize(width, height);
+            sceneDirty = true;
+        }
+        new ResizeObserver(resize).observe(flightView);
+        resize();
+        startTrial();
+        config.disabled = false;
+
+        const clock = new THREE.Clock();
+        renderer.setAnimationLoop(() => {
+            const delta = Math.min(clock.getDelta(), 0.25);
+            if (!isPaused && trial.steps < TRIAL_STEPS) {
+                accumulator += delta;
+                while (accumulator >= STEP && trial.step()) {
+                    accumulator -= STEP;
+                    drawState();
+                }
+                if (trial.steps === TRIAL_STEPS) {
+                    setStatus();
+                    showMetrics();
+                } else if (trial.steps - lastMetrics >= 2) {
+                    lastMetrics = trial.steps;
+                    showMetrics();
                 }
             }
-        });
-
-        // ──────────────────────────────────────────────────────
-        // 14. CLICK TO SET WAYPOINT (fun interaction)
-        // ──────────────────────────────────────────────────────
-        // (Simplified - click on ground to move drone target)
-        const raycaster = new THREE.Raycaster();
-        const pointer = new THREE.Vector2();
-
-        renderer.domElement.addEventListener('dblclick', (event) => {
-            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-            pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
-            raycaster.setFromCamera(pointer, camera);
-            const intersects = raycaster.intersectObject(ground);
-            if (intersects.length > 0) {
-                const pt = intersects[0].point;
-                // Create a temporary target marker
-                const marker = new THREE.Mesh(
-                    new THREE.RingGeometry(0.15, 0.25, 16),
-                    new THREE.MeshBasicMaterial({
-                        color: 0x64b5f6,
-                        transparent: true,
-                        opacity: 0.6,
-                        side: THREE.DoubleSide,
-                    })
-                );
-                marker.position.set(pt.x, 0.05, pt.z);
-                marker.rotation.x = -Math.PI / 2;
-                scene.add(marker);
-                setTimeout(() => {
-                    scene.remove(marker);
-                    marker.geometry.dispose();
-                    marker.material.dispose();
-                }, 2000);
-                waypoint = new THREE.Vector3(pt.x, 2.0, pt.z);
-                document.getElementById('state-display').textContent = 'Tracking waypoint';
+            controls.update();
+            if (sceneDirty) {
+                sceneDirty = false;
+                renderer.render(scene, camera);
+                labelRenderer.render(scene, camera);
             }
         });
-
-
     </script>
 </body>
 </html>
