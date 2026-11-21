@@ -10,10 +10,10 @@ https://zmath01.github.io/threejs-gadgets
 
 | Demo | Description | File |
 | --- | --- | --- |
-| ⚙️ Differential Simulation | Interactive gear differential & torque-feature visualizer | [`differential-01.html`](differential-01.html) |
+| ⚙️ Differential Simulation | Differential with carrier RPM, playback, and wheel-speed controls | [`differential-01.html`](differential-01.html) |
 | 🏎️ F1 Systems Lab | Power unit & dynamics visualizer with engine/gearbox telemetry | [`f1-system-full.html`](f1-system-full.html) |
-| 🧊 Mental Rotation Trainer | Allocentric spatial trainer with rotation/timing scoring | [`mental-rotation-test.html`](mental-rotation-test.html) |
-| ✨ Compute Showcase | Matrix math, particle physics and Game of Life computed in JavaScript and rendered in WebGL | [`matrix-particles-game.html`](matrix-particles-game.html) |
+| 🧊 Mental Rotation Trainer | Shepard–Metzler-style same-or-mirror practice at controlled angles | [`mental-rotation-test.html`](mental-rotation-test.html) |
+| ✨ Compute Showcase | Matrix math, particle physics, and Game of Life with per-demo controls | [`matrix-particles-game.html`](matrix-particles-game.html) |
 | <img src="drone-icon.svg" width="16" height="16" alt=""> Drone Simulation | Compare PD and MPC tracking with Kalman or ideal state feedback | [`drone-simulation.html`](drone-simulation.html) |
 
 ## Tech stack

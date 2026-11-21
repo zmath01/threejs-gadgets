@@ -30,13 +30,30 @@
   --font-body:'Inter',sans-serif;
 }
 *{box-sizing:border-box;}
-html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;font-family:var(--font-body);color:var(--text);}
-#canvas-wrap{position:fixed;inset:0;}
-#canvas-wrap canvas{display:block;touch-action:none;}
+html,body{margin:0;background:var(--bg);font-family:var(--font-body);color:var(--text);}
+.lab-layout{
+  display:grid;grid-template-columns:minmax(0,1fr) minmax(19rem,22rem);
+  grid-template-rows:auto minmax(22rem,1fr);gap:12px;
+  height:100vh;height:100dvh;min-height:30rem;padding:12px;
+}
+.lab-view{display:grid;grid-template-rows:minmax(0,1fr) auto;min-width:0;min-height:0;border:1px solid var(--line);}
+#canvas-wrap{position:relative;min-width:0;min-height:0;overflow:hidden;}
+#canvas-wrap canvas{display:block;position:absolute;inset:0;width:100%;height:100%;touch-action:none;}
+#part-labels{position:absolute;inset:0;z-index:2;pointer-events:none;}
+.part-label{
+  position:absolute;top:0;left:0;white-space:nowrap;height:22px;padding:0 6px;
+  font:11px/20px var(--font-mono);color:var(--text);background:#0c1018;
+  border:1px solid var(--part-color);border-radius:3px;
+}
+.part-leader{
+  position:absolute;top:0;left:0;height:1px;
+  background:var(--part-color);opacity:.7;transform-origin:left center;
+}
+.view-caption{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap;padding:10px 12px;border-top:1px solid var(--line);}
 
 /* background grid texture */
 #bg-grid{
-  position:fixed;inset:0;pointer-events:none;z-index:1;
+  position:absolute;inset:0;pointer-events:none;z-index:1;
   background-image:
     linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
@@ -47,10 +64,9 @@ html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;font-family:
 
 /* ---------- top bar ---------- */
 header.hud-top{
-  position:fixed;top:0;left:0;right:0;z-index:20;
-  display:flex;align-items:flex-start;justify-content:space-between;gap:16px;
-  padding:18px 22px 0 22px;
-  pointer-events:none;
+  grid-column:1/-1;
+  display:flex;align-items:center;justify-content:space-between;gap:10px 16px;flex-wrap:wrap;
+  padding:4px;
 }
 .brand{pointer-events:auto;}
 .brand .eyebrow{
@@ -88,9 +104,8 @@ nav.tabs{
 
 /* ---------- side panel ---------- */
 aside#hud-panel{
-  position:fixed;right:20px;top:96px;bottom:96px;width:352px;max-width:calc(100vw - 40px);
-  z-index:20;background:var(--panel);border:1px solid var(--line);backdrop-filter:blur(10px);
-  overflow-y:auto;pointer-events:auto;
+  min-width:0;min-height:0;background:var(--panel);border:1px solid var(--line);
+  overflow-y:auto;
 }
 aside#hud-panel::-webkit-scrollbar{width:6px;}
 aside#hud-panel::-webkit-scrollbar-thumb{background:var(--line-strong);}
@@ -134,7 +149,7 @@ input[type=range]::-moz-range-thumb{
 .btn.active{color:var(--bg);background:var(--red);border-color:var(--red);}
 .btn.electric.active{color:var(--bg);background:var(--cyan);border-color:var(--cyan);}
 
-.readout-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;}
+.readout-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px;}
 .readout{background:rgba(255,255,255,0.03);border:1px solid var(--line);padding:9px 10px;}
 .readout .label{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;color:var(--text-faint);text-transform:uppercase;}
 .readout .num{font-family:var(--font-mono);font-weight:700;font-size:16px;color:var(--text);margin-top:2px;}
@@ -161,38 +176,41 @@ input[type=range]::-moz-range-thumb{
 
 /* ---------- bottom bits ---------- */
 .hint{
-  position:fixed;left:22px;bottom:18px;z-index:20;font-family:var(--font-mono);font-size:10.5px;
+  font-family:var(--font-mono);font-size:10.5px;
   color:var(--text-faint);letter-spacing:.05em;pointer-events:none;
 }
 .hint b{color:var(--text-dim);}
 .legend{
-  position:fixed;left:22px;bottom:42px;z-index:20;display:flex;gap:14px;
+  display:flex;gap:6px 14px;flex-wrap:wrap;
   font-family:var(--font-mono);font-size:10px;color:var(--text-faint);letter-spacing:.04em;
   pointer-events:none;
 }
 .legend span{display:flex;align-items:center;gap:6px;}
 .legend i{width:8px;height:8px;display:inline-block;}
 
-@media (max-width:760px){
-  aside#hud-panel{left:12px;right:12px;top:auto;bottom:12px;width:auto;max-height:46vh;}
-  header.hud-top{flex-direction:column;padding:14px 14px 0 14px;}
-  nav.tabs{width:100%;max-width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));}
-  .tab-btn{padding:7px 10px;justify-content:center;}
-  .legend{display:none;}
+@media (max-width:860px){
+  .lab-layout{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto;height:auto;min-height:100vh;}
+  .lab-view{grid-template-rows:clamp(15rem,48vh,28rem) auto;}
+  aside#hud-panel{overflow:visible;}
+  header.hud-top{padding:0;}
+  nav.tabs{flex-basis:100%;min-width:0;justify-content:space-around;}
+}
+@media (max-width:560px){
+  nav.tabs{flex-basis:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));}
+  .tab-btn{padding:7px 6px;justify-content:center;}
+  .frame{padding:14px;}
 }
 </style>
 </head>
 <body>
 
-<div id="bg-grid"></div>
-<div id="canvas-wrap"></div>
-
+<div class="lab-layout">
 <header class="hud-top">
   <div class="brand">
     <div class="eyebrow">Powertrain · Drivetrain · Chassis</div>
     <h1>F1 SYSTEMS <span>LAB</span></h1>
   </div>
-  <nav class="tabs">
+  <nav class="tabs" aria-label="F1 systems">
     <button class="tab-btn active" data-mod="engine"><span class="dot"></span><span class="num">01</span> Engine</button>
     <button class="tab-btn" data-mod="diff"><span class="dot"></span><span class="num">02</span> Differential</button>
     <button class="tab-btn" data-mod="steer"><span class="dot"></span><span class="num">03</span> Steering</button>
@@ -200,7 +218,18 @@ input[type=range]::-moz-range-thumb{
   </nav>
 </header>
 
-<aside id="hud-panel">
+<section class="lab-view" aria-label="3D simulation">
+  <div id="canvas-wrap"><div id="bg-grid"></div><div id="part-labels" aria-hidden="true"></div></div>
+  <div class="view-caption">
+    <div class="legend">
+  <span><i style="background:var(--red)"></i>Combustion / mechanical</span>
+  <span><i style="background:var(--cyan)"></i>Electric / hybrid</span>
+</div>
+<div class="hint"><b>Drag</b> to orbit · <b>scroll</b> to zoom</div>
+  </div>
+</section>
+
+<aside id="hud-panel" aria-label="Simulation controls">
   <div class="frame">
     <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
 
@@ -216,7 +245,7 @@ input[type=range]::-moz-range-thumb{
       </div>
 
       <div class="field">
-        <div class="field-row"><label>Engine speed</label><span class="val" id="eng-rpm-val">9,000 rpm</span></div>
+        <div class="field-row"><label for="eng-rpm">Engine speed</label><span class="val" id="eng-rpm-val">9,000 rpm</span></div>
         <input type="range" id="eng-rpm" min="3000" max="15000" step="50" value="9000">
       </div>
 
@@ -251,12 +280,12 @@ input[type=range]::-moz-range-thumb{
       <p class="desc">A bevel‑gear differential lets the two driven wheels rotate at different speeds while still sharing torque from a single input shaft — essential once the outer wheel has to travel further than the inner wheel through a corner.</p>
 
       <div class="field">
-        <div class="field-row"><label>Driveshaft speed</label><span class="val" id="diff-rpm-val">4,000 rpm</span></div>
+        <div class="field-row"><label for="diff-rpm">Driveshaft speed</label><span class="val" id="diff-rpm-val">4,000 rpm</span></div>
         <input type="range" id="diff-rpm" min="0" max="8000" step="50" value="4000">
       </div>
 
       <div class="field">
-        <div class="field-row"><label>Cornering bias</label><span class="val" id="diff-corner-val">0% (straight)</span></div>
+        <div class="field-row"><label for="diff-corner">Cornering bias</label><span class="val" id="diff-corner-val">0% (straight)</span></div>
         <input type="range" id="diff-corner" min="-100" max="100" step="1" value="0">
       </div>
 
@@ -277,7 +306,7 @@ input[type=range]::-moz-range-thumb{
       <p class="desc">F1 cars steer with the <b>front wheels only</b>, through a rack‑and‑pinion system — there is no four‑wheel steering. The rack is pushed sideways, tie‑rods pull each wheel's steering arm, and Ackermann geometry makes the inner wheel turn a sharper angle than the outer one.</p>
 
       <div class="field">
-        <div class="field-row"><label>Steering input</label><span class="val" id="steer-angle-val">0°</span></div>
+        <div class="field-row"><label for="steer-angle">Steering input</label><span class="val" id="steer-angle-val">0°</span></div>
         <input type="range" id="steer-angle" min="-30" max="30" step="0.5" value="0">
       </div>
 
@@ -298,15 +327,15 @@ input[type=range]::-moz-range-thumb{
       <p class="desc">Each corner behaves like a mass on a spring and damper: m·x″&nbsp;+&nbsp;c·x′&nbsp;+&nbsp;k·x&nbsp;=&nbsp;F(t). The spring stores energy and resists compression; the damper bleeds energy off so the car settles instead of bouncing forever.</p>
 
       <div class="field">
-        <div class="field-row"><label>Spring rate (k)</label><span class="val" id="susp-k-val">55</span></div>
+        <div class="field-row"><label for="susp-k">Spring rate (k)</label><span class="val" id="susp-k-val">55</span></div>
         <input type="range" id="susp-k" min="15" max="120" step="1" value="55">
       </div>
       <div class="field">
-        <div class="field-row"><label>Damping (c)</label><span class="val" id="susp-c-val">7.0</span></div>
+        <div class="field-row"><label for="susp-c">Damping (c)</label><span class="val" id="susp-c-val">7.0</span></div>
         <input type="range" id="susp-c" min="0" max="25" step="0.2" value="7">
       </div>
       <div class="field">
-        <div class="field-row"><label>Corner mass (m)</label><span class="val" id="susp-m-val">1.0</span></div>
+        <div class="field-row"><label for="susp-m">Corner mass (m)</label><span class="val" id="susp-m-val">1.0</span></div>
         <input type="range" id="susp-m" min="0.4" max="2.5" step="0.05" value="1">
       </div>
 
@@ -334,11 +363,7 @@ input[type=range]::-moz-range-thumb{
   </div>
 </aside>
 
-<div class="legend">
-  <span><i style="background:var(--red)"></i>Combustion / mechanical</span>
-  <span><i style="background:var(--cyan)"></i>Electric / hybrid</span>
 </div>
-<div class="hint"><b>Drag</b> to orbit · <b>scroll</b> to zoom</div>
 
 <script>
 'use strict';
@@ -351,32 +376,67 @@ function lerp(a,b,t){return a+(b-a)*t;}
 function clamp(v,lo,hi){return Math.min(hi,Math.max(lo,v));}
 function easeInOutCubic(t){return t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;}
 
-function makeLabelSprite(text,color){
-  const canvas=document.createElement('canvas');
-  const ctx=canvas.getContext('2d');
-  const scale=64;
-  ctx.font='600 '+ (28) +'px Rajdhani, sans-serif';
-  const w=Math.ceil(ctx.measureText(text).width)+28;
-  canvas.width=w; canvas.height=40;
-  const ctx2=canvas.getContext('2d');
-  ctx2.font='600 22px Rajdhani, sans-serif';
-  ctx2.fillStyle='rgba(6,8,11,0.72)';
-  ctx2.fillRect(0,0,canvas.width,canvas.height);
-  ctx2.strokeStyle=color||'#e10600';
-  ctx2.lineWidth=1;
-  ctx2.strokeRect(0.5,0.5,canvas.width-1,canvas.height-1);
-  ctx2.fillStyle='#eef2f6';
-  ctx2.textBaseline='middle';
-  ctx2.fillText(text,14,21);
-  const tex=new THREE.CanvasTexture(canvas);
-  tex.minFilter=THREE.LinearFilter;
-  const mat=new THREE.SpriteMaterial({map:tex,depthTest:false,transparent:true});
-  const sprite=new THREE.Sprite(mat);
-  const aspect=canvas.width/canvas.height;
-  const h=0.34;
-  sprite.scale.set(h*aspect,h,1);
-  sprite.renderOrder=999;
-  return sprite;
+const labelLayer=document.getElementById('part-labels');
+const partLabels=[];
+const projected=new THREE.Vector3();
+let viewWidth=0, viewHeight=0, labelLayoutKey='';
+
+function makePartLabel(text,color){
+  const anchor=new THREE.Object3D();
+  const tag=document.createElement('span');
+  const leader=document.createElement('span');
+  tag.className='part-label';
+  leader.className='part-leader';
+  tag.textContent=text;
+  for(const el of [leader,tag]){
+    el.hidden=true;
+    el.style.setProperty('--part-color',color);
+    labelLayer.appendChild(el);
+  }
+  partLabels.push({anchor,tag,leader,width:0});
+  return anchor;
+}
+
+function layoutPartLabels(){
+  const {theta,phi,radius,target}=camState;
+  const key=[activeModule,modules.engine.params.era,theta,phi,radius,target.x,target.y,target.z,viewWidth,viewHeight].join('|');
+  if(key===labelLayoutKey || !viewWidth || !viewHeight) return;
+  labelLayoutKey=key;
+  const padding=7, rowHeight=22, separation=rowHeight+5;
+  const active=[];
+  for(const label of partLabels){
+    const {anchor,tag,leader}=label;
+    let visible=anchor.visible && anchor.parent.visible;
+    if(visible){
+      anchor.getWorldPosition(projected).project(camera);
+      visible=projected.z>=-1 && projected.z<=1 && Math.abs(projected.x)<=1 && Math.abs(projected.y)<=1;
+    }
+    tag.hidden=leader.hidden=!visible;
+    if(!visible) continue;
+    label.width=tag.offsetWidth;
+    label.x=(projected.x+1)*viewWidth/2;
+    label.y=(1-projected.y)*viewHeight/2;
+    active.push(label);
+  }
+  active.sort((a,b)=>a.y-b.y);
+  let previousY=padding-separation;
+  for(const label of active){
+    label.top=Math.max(label.y-rowHeight-8,previousY+separation);
+    previousY=label.top;
+  }
+  // Move the stack back up if its last row would extend past the bottom.
+  let lastTop=viewHeight-padding-rowHeight;
+  for(let i=active.length-1;i>=0;i--){
+    const label=active[i];
+    const top=Math.min(label.top,lastTop);
+    const left=clamp(label.x-label.width/2,padding,viewWidth-label.width-padding);
+    label.tag.style.transform=`translate(${left}px,${top}px)`;
+    const dx=clamp(label.x,left,left+label.width)-label.x;
+    const dy=clamp(label.y,top,top+rowHeight)-label.y;
+    label.leader.style.width=Math.hypot(dx,dy)+'px';
+    label.leader.style.transform=`translate(${label.x}px,${label.y}px) rotate(${Math.atan2(dy,dx)}rad)`;
+    lastTop=top-separation;
+  }
 }
 
 function updateStrut(mesh,p1,p2){
@@ -420,11 +480,10 @@ function initThree(){
   scene.background=new THREE.Color(0x05070a);
   scene.fog=new THREE.FogExp2(0x05070a,0.045);
 
-  camera=new THREE.PerspectiveCamera(42, window.innerWidth/window.innerHeight, 0.05, 100);
+  camera=new THREE.PerspectiveCamera(42, 1, 0.05, 100);
 
   renderer=new THREE.WebGLRenderer({antialias:true});
   renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
-  renderer.setSize(window.innerWidth,window.innerHeight);
   renderer.shadowMap.enabled=false;
   wrap.appendChild(renderer.domElement);
 
@@ -456,13 +515,20 @@ function initThree(){
   scene.add(grid);
 
   clock=new THREE.Clock();
-  window.addEventListener('resize',onResize);
+  onResize();
+  new ResizeObserver(onResize).observe(wrap);
 }
 
 function onResize(){
-  camera.aspect=window.innerWidth/window.innerHeight;
+  const width=wrap.clientWidth, height=wrap.clientHeight;
+  if(!width || !height) return;
+  viewWidth=width;
+  viewHeight=height;
+  camera.aspect=width/height;
+  // Keep the horizontal field of view wide enough when the stage narrows.
+  camera.fov=THREE.MathUtils.radToDeg(2*Math.atan(Math.tan(THREE.MathUtils.degToRad(21))/Math.min(1,camera.aspect)));
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth,window.innerHeight);
+  renderer.setSize(width,height,false);
 }
 
 /* ---------------- custom orbit camera ---------------- */
@@ -639,19 +705,19 @@ function buildEngine(){
   group.add(batt);
 
   // labels
-  const lblICE=makeLabelSprite('ICE · V6 1.6L Turbo','#e10600');
+  const lblICE=makePartLabel('ICE · V6 1.6L Turbo','#e10600');
   lblICE.position.set(0,crankY+1.15,0);
   group.add(lblICE);
-  const lblTurbo=makeLabelSprite('Turbocharger','#ffb020');
+  const lblTurbo=makePartLabel('Turbocharger','#ffb020');
   lblTurbo.position.set(1.35,crankY+0.6,0.85);
   group.add(lblTurbo);
-  const lblMguk=makeLabelSprite('MGU-K','#00e0ff');
+  const lblMguk=makePartLabel('MGU-K','#00e0ff');
   lblMguk.position.set(0,crankY+0.35,1.35);
   group.add(lblMguk);
-  const lblBatt=makeLabelSprite('Energy Store (ES)','#00e0ff');
+  const lblBatt=makePartLabel('Energy Store (ES)','#00e0ff');
   lblBatt.position.set(-1.25,crankY+0.35,0);
   group.add(lblBatt);
-  const lblMguH=makeLabelSprite('MGU-H (2014–25 only)','#00e0ff');
+  const lblMguH=makePartLabel('MGU-H (2014–25 only)','#00e0ff');
   lblMguH.position.set(1.35,crankY-0.28,0.85);
   group.add(lblMguH);
 
@@ -797,13 +863,13 @@ function buildDifferential(){
   const leftSide=buildWheelSide(-1);
   const rightSide=buildWheelSide(1);
 
-  const lblRing=makeLabelSprite('Ring gear + carrier','#e10600');
+  const lblRing=makePartLabel('Ring gear + carrier','#e10600');
   lblRing.position.set(0,axleY+1.0,0);
   group.add(lblRing);
-  const lblPinion=makeLabelSprite('Pinion (from gearbox)','#8a93a3');
+  const lblPinion=makePartLabel('Pinion (from gearbox)','#8a93a3');
   lblPinion.position.set(0,axleY+0.55,-1.0);
   group.add(lblPinion);
-  const lblSpider=makeLabelSprite('Spider gears','#ffb020');
+  const lblSpider=makePartLabel('Spider gears','#ffb020');
   lblSpider.position.set(0,axleY+0.65,0.55);
   group.add(lblSpider);
 
@@ -946,10 +1012,10 @@ function buildSteering(){
   icMarker.rotation.x=-Math.PI/2;
   group.add(icMarker);
 
-  const lblFront=makeLabelSprite('Front — steered','#e10600');
+  const lblFront=makePartLabel('Front — steered','#e10600');
   lblFront.position.set(0,wheelY+0.9,halfWb);
   group.add(lblFront);
-  const lblRear=makeLabelSprite('Rear — fixed','#3ddc84');
+  const lblRear=makePartLabel('Rear — fixed','#3ddc84');
   lblRear.position.set(0,wheelY+0.7,-halfWb);
   group.add(lblRear);
 
@@ -1083,10 +1149,10 @@ function buildSuspension(){
   eqLine.computeLineDistances();
   group.add(eqLine);
 
-  const lblSpring=makeLabelSprite('Spring (k)','#ffb020');
+  const lblSpring=makePartLabel('Spring (k)','#ffb020');
   lblSpring.position.set(0.35,chassisY+0.35,0);
   group.add(lblSpring);
-  const lblDamper=makeLabelSprite('Damper (c)','#8a93a3');
+  const lblDamper=makePartLabel('Damper (c)','#8a93a3');
   lblDamper.position.set(-0.35,chassisY+0.35,0);
   group.add(lblDamper);
 
@@ -1287,6 +1353,7 @@ function animate(){
   modules[activeModule].update(dt);
 
   renderer.render(scene,camera);
+  layoutPartLabels();
 }
 
 init();
