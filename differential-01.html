@@ -5,57 +5,29 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Three.js Differential Simulation</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #111; font-family: sans-serif; }
-        #info {
-            position: absolute;
-            top: 10px;
-            width: 100%;
-            text-align: center;
-            color: #fff;
-            pointer-events: none;
-            text-shadow: 1px 1px 2px black;
-            z-index: 10;
+        * { box-sizing: border-box; }
+        body { margin: 0; background: #111; color: #f5f6f7; font: 15px system-ui, sans-serif; }
+        .demo { display: grid; min-height: 100vh; min-height: 100dvh; grid-template-rows: auto minmax(15rem, 1fr) auto; }
+        #info { text-align: center; padding: .8rem 1rem; }
+        #stage { position: relative; min-width: 0; overflow: hidden; background: #1a1a1a; }
+        #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+        #controls { width: min(100%, 48rem); margin-inline: auto; padding: 1rem; display: grid; gap: .85rem; }
+        .control-row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+        .speed-row { display: grid; grid-template-columns: minmax(5rem, 1fr) minmax(5rem, 2fr) 5.25rem; }
+        button, select, input[type=number] {
+            font: inherit; color: inherit; background: #21262d; border: 1px solid #484e57;
+            border-radius: 6px; padding: .45rem .65rem;
         }
-        #controls {
-            position: absolute;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.8);
-            padding: 15px;
-            border-radius: 8px;
-            color: white;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            align-items: center;
-            border: 1px solid #444;
-            z-index: 10;
-        }
-        .control-row { display: flex; gap: 15px; align-items: center; width: 100%; justify-content: center; }
-        button {
-            padding: 8px 16px;
-            cursor: pointer;
-            background: #007bff;
-            border: none;
-            color: white;
-            border-radius: 4px;
-            font-weight: bold;
-            transition: background 0.2s;
-        }
-        button:hover { background: #0056b3; }
-        button.active { background: #28a745; }
-        label { font-size: 14px; min-width: 120px; }
-        input[type=range] { width: 150px; }
-        .value-display { min-width: 40px; text-align: right; font-family: monospace; }
-        h1 { margin: 0 0 5px 0; font-size: 1.2rem; color: #ffaa00; }
-        p { margin: 0; font-size: 0.9rem; color: #ccc; }
-        #status { margin-top: 10px; font-size: 0.85rem; color: #aaa; font-style: italic; }
-        @media (max-width: 560px) {
-            #controls { width: calc(100% - 16px); box-sizing: border-box; bottom: 8px; padding: 8px; }
-            .control-row { flex-wrap: wrap; gap: 6px; }
-            #info { max-width: calc(100% - 16px); box-sizing: border-box; top: 8px; left: 8px; }
-        }
+        button, select { cursor: pointer; }
+        button[aria-pressed=true] { border-color: #ffc45b; background: #322817; }
+        label { min-width: 0; }
+        input[type=range] { width: 100%; min-width: 0; accent-color: #ffc45b; }
+        output { font: 600 1rem ui-monospace, monospace; color: #ffcf78; }
+        .readouts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; }
+        .readouts div { display: grid; gap: .25rem; padding: .55rem; background: #202124; border-radius: 6px; }
+        h1 { margin: 0 0 .25rem; font-size: clamp(1.1rem, 3vw, 1.4rem); color: #ffc45b; }
+        p { margin: 0; font-size: .875rem; color: #c9cbd0; }
+        #status { min-height: 2.5em; }
     </style>
     <!-- Import Map for Three.js -->
     <script type="importmap">
@@ -69,25 +41,41 @@
 </head>
 <body>
 
-    <div id="info">
-        <h1>Automotive Differential Visualization</h1>
-        <p>Core Principle: Left Speed + Right Speed = 2 × Carrier Speed</p>
-        <p>Left Click: Rotate | Right Click: Pan | Scroll: Zoom</p>
-    </div>
-
-    <div id="controls">
-        <div class="control-row">
-            <button id="modeStraight">Straight Drive</button>
-            <button id="modeTurn">Turning</button>
-            <button id="modeSlip">One Wheel Slip (Ice)</button>
-        </div>
-        <div class="control-row">
-            <label for="speedRange">Carrier Speed (RPM):</label>
-            <input type="range" id="speedRange" min="0" max="3000" value="1000">
-            <span id="rpmValue" class="value-display">1000</span>
-        </div>
-        <div id="status">Mode: Straight Drive - Both wheels rotate equally</div>
-    </div>
+    <main class="demo">
+        <header id="info">
+            <h1>Automotive Differential</h1>
+            <p>Left wheel RPM + right wheel RPM = 2 × carrier RPM</p>
+        </header>
+        <div id="stage" aria-label="3D differential model"></div>
+        <section id="controls" aria-label="Differential controls">
+            <div class="control-row" role="group" aria-label="Driving mode">
+                <button id="modeStraight" aria-pressed="true">Straight drive</button>
+                <button id="modeTurn" aria-pressed="false">Turning</button>
+                <button id="modeSlip" aria-pressed="false">Left wheel stopped</button>
+            </div>
+            <div class="control-row speed-row">
+                <label for="speedRange">Carrier RPM</label>
+                <input type="range" id="speedRange" min="0" max="3000" step="1" value="1000">
+                <input type="number" id="speedNumber" aria-label="Exact carrier RPM" min="0" max="3000" step="1" value="1000">
+            </div>
+            <div class="control-row">
+                <label for="playbackRate">Animation speed</label>
+                <select id="playbackRate">
+                    <option value="0.005">1/200×</option>
+                    <option value="0.02" selected>1/50×</option>
+                    <option value="0.1">1/10×</option>
+                    <option value="1">Real time</option>
+                </select>
+                <button id="pause">Pause</button>
+            </div>
+            <div class="readouts" aria-label="Model speeds">
+                <div>Left wheel <output id="leftRPM">1,000</output></div>
+                <div>Carrier <output id="rpmValue">1,000</output></div>
+                <div>Right wheel <output id="rightRPM">1,000</output></div>
+            </div>
+            <p id="status" role="status">Both wheels turn at the carrier speed.</p>
+        </section>
+    </main>
 
     <script type="module">
         import * as THREE from 'three';
@@ -107,13 +95,14 @@
         scene.background = new THREE.Color(0x1a1a1a);
         scene.fog = new THREE.Fog(0x1a1a1a, 10, 50);
 
-        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-        camera.position.set(8, 6, 8);
+        const stage = document.getElementById('stage');
+        const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+        camera.position.set(10, 7, 10);
 
         const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.shadowMap.enabled = true;
-        document.body.appendChild(renderer.domElement);
+        stage.appendChild(renderer.domElement);
 
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
@@ -132,9 +121,9 @@
         scene.add(pointLight);
 
         // --- Materials ---
-        const matSteel = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.3, metalness: 0.9 });
+        const matSteel = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.42, metalness: 0.45 });
         const matGold = new THREE.MeshStandardMaterial({ color: 0xffd700, roughness: 0.4, metalness: 0.6 }); // Spider gears
-        const matDark = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.5, metalness: 0.7 });
+        const matDark = new THREE.MeshStandardMaterial({ color: 0x4e535d, roughness: 0.54, metalness: 0.38 });
         const matRed = new THREE.MeshStandardMaterial({ color: 0xcc0000, roughness: 0.3, metalness: 0.5 });
 
         // --- Helper: Create Gear ---
@@ -293,6 +282,15 @@
         const wheelR = createCylinder(1.5, 0.8, matRed);
         wheelR.rotation.z = Math.PI / 2;
         wheelR.position.x = 2;
+        const markerGeometry = new THREE.BoxGeometry(0.48, 0.045, 0.15);
+        const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xffcf78 });
+        for (const wheel of [wheelL, wheelR]) {
+            for (const y of [-0.41, 0.41]) {
+                const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+                marker.position.set(1.1, y, 0);
+                wheel.add(marker);
+            }
+        }
         rightAxle.add(wheelR);
 
         scene.add(leftAxlePivot);
@@ -302,112 +300,92 @@
         leftAxlePivot.position.x = -1.2;
         rightAxlePivot.position.x = 1.2;
 
-        // --- Animation State ---
-        let carrierAngle = 0;
-        let spiderAngle = 0; // Rotation of spider gears on their own pin
-        
-        let mode = 'straight'; // straight, turn, slip
-        let baseRPM = 1000;
-
-        const statusEl = document.getElementById('status');
-        const rpmDisplay = document.getElementById('rpmValue');
+        const modeSettings = {
+            modeStraight: { split: 0, description: 'Both wheels turn at the carrier speed.' },
+            modeTurn: { split: 0.4, description: 'The left wheel slows down and the right wheel speeds up.' },
+            modeSlip: { split: 1, description: 'The left wheel stops and the right wheel turns at twice the carrier speed.' },
+        };
         const speedInput = document.getElementById('speedRange');
+        const speedNumber = document.getElementById('speedNumber');
+        const playback = document.getElementById('playbackRate');
+        const pauseButton = document.getElementById('pause');
+        const speedFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
+        let mode = modeSettings.modeStraight;
+        let rpm = Number(speedInput.value);
+        let leftRPM = rpm, rightRPM = rpm;
+        let paused = false;
+        let carrierAngle = 0, leftAngle = 0, rightAngle = 0, spiderAngle = 0;
+        const clock = new THREE.Clock();
+        const radiansPerRpm = 2 * Math.PI / 60;
 
-        // Controls
-        document.getElementById('modeStraight').onclick = () => {
-            mode = 'straight';
-            statusEl.textContent = "Mode: Straight Drive - Spider gears do not rotate on their pin. Both wheels equal speed.";
-            updateButtons('modeStraight');
-        };
-        document.getElementById('modeTurn').onclick = () => {
-            mode = 'turn';
-            statusEl.textContent = "Mode: Turning - Outer wheel spins faster, inner slower. Spider gears rotate.";
-            updateButtons('modeTurn');
-        };
-        document.getElementById('modeSlip').onclick = () => {
-            mode = 'slip';
-            statusEl.textContent = "Mode: One Wheel Slip - Left wheel stuck (0 RPM). Right wheel spins at 2x Carrier speed.";
-            updateButtons('modeSlip');
-        };
-
-        function updateButtons(activeId) {
-            ['modeStraight', 'modeTurn', 'modeSlip'].forEach(id => {
-                document.getElementById(id).classList.toggle('active', id === activeId);
-            });
+        function updateSpeeds() {
+            const offset = rpm * mode.split;
+            leftRPM = rpm - offset;
+            rightRPM = rpm + offset;
+            for (const [id, value] of [['leftRPM', leftRPM], ['rpmValue', rpm], ['rightRPM', rightRPM]]) {
+                document.getElementById(id).textContent = speedFormat.format(value);
+            }
         }
 
-        speedInput.addEventListener('input', (e) => {
-            baseRPM = parseInt(e.target.value);
-            rpmDisplay.textContent = baseRPM;
+        function setRPM(value) {
+            rpm = Math.min(Number(speedInput.max), Math.max(Number(speedInput.min), Math.round(value)));
+            speedInput.value = speedNumber.value = rpm;
+            updateSpeeds();
+        }
+
+        for (const [id, settings] of Object.entries(modeSettings)) {
+            document.getElementById(id).addEventListener('click', () => {
+                mode = settings;
+                for (const buttonId of Object.keys(modeSettings)) {
+                    document.getElementById(buttonId).setAttribute('aria-pressed', buttonId === id);
+                }
+                document.getElementById('status').textContent = settings.description;
+                updateSpeeds();
+            });
+        }
+        speedInput.addEventListener('input', () => setRPM(speedInput.valueAsNumber));
+        speedNumber.addEventListener('input', () => {
+            if (speedNumber.validity.valid && Number.isFinite(speedNumber.valueAsNumber)) setRPM(speedNumber.valueAsNumber);
         });
-
-        // --- Animation Loop ---
-        const clock = new THREE.Clock();
-
-        let leftAngle = 0, rightAngle = 0;
+        speedNumber.addEventListener('change', () => setRPM(Number.isFinite(speedNumber.valueAsNumber) ? speedNumber.valueAsNumber : rpm));
+        pauseButton.addEventListener('click', () => {
+            paused = !paused;
+            pauseButton.textContent = paused ? 'Resume' : 'Pause';
+        });
 
         function animate() {
             requestAnimationFrame(animate);
-
             const dt = Math.min(clock.getDelta(), 0.05);
-            
-            // Calculate Carrier Rotation
-            // RPM to rad/s: RPM * 2PI / 60
-            const carrierSpeedRadS = (baseRPM * Math.PI * 2) / 60;
-            const dCarrier = carrierSpeedRadS * dt;
-
-            carrierAngle += dCarrier;
-            carrierGroup.rotation.x = carrierAngle;
-
-            let leftSpeedRatio = 1;
-            let rightSpeedRatio = 1;
-            let spiderSpinSpeed = 0;
-
-            if (mode === 'straight') {
-                // wL = wR = wCarrier
-                leftSpeedRatio = 1;
-                rightSpeedRatio = 1;
-                spiderSpinSpeed = 0;
-            } else if (mode === 'turn') {
-                // Simulate a turn: Left slower, Right faster (or vice versa)
-                // wL = wC - d, wR = wC + d
-                const diff = carrierSpeedRadS * 0.4; // 40% difference
-                leftSpeedRatio = 0.6;
-                rightSpeedRatio = 1.4;
-                
-                // Spider gears must spin to accommodate this difference
-                // The rate of spider spin is proportional to the difference
-                spiderSpinSpeed = diff * 2; // Multiplier for visual effect
-            } else if (mode === 'slip') {
-                // Left wheel = 0. Right wheel = 2 * Carrier
-                leftSpeedRatio = 0;
-                rightSpeedRatio = 2;
-                // Spider spin is max
-                spiderSpinSpeed = carrierSpeedRadS; 
+            if (!paused) {
+                const anglePerRpm = dt * Number(playback.value) * radiansPerRpm;
+                carrierAngle += rpm * anglePerRpm;
+                leftAngle += leftRPM * anglePerRpm;
+                rightAngle += rightRPM * anglePerRpm;
+                const sideGearRPM = rightRPM - rpm;
+                spiderAngle += sideGearRPM * CONFIG.sideGearTeeth / CONFIG.spiderGearTeeth * anglePerRpm;
+                carrierGroup.rotation.x = carrierAngle;
+                leftAxlePivot.rotation.x = leftAngle;
+                rightAxlePivot.rotation.x = rightAngle;
+                leftSideGear.rotation.x = leftAngle - carrierAngle;
+                rightSideGear.rotation.x = rightAngle - carrierAngle;
+                spiderGear1.rotation.z = spiderAngle;
+                spiderGear2.rotation.z = -spiderAngle;
             }
-
-            // Axles rotate in world space. Side gears inherit the carrier angle.
-            leftAngle += carrierSpeedRadS * leftSpeedRatio * dt;
-            rightAngle += carrierSpeedRadS * rightSpeedRatio * dt;
-            spiderAngle += spiderSpinSpeed * dt;
-            leftAxlePivot.rotation.x = leftAngle;
-            rightAxlePivot.rotation.x = rightAngle;
-            leftSideGear.rotation.x = leftAngle - carrierAngle;
-            rightSideGear.rotation.x = rightAngle - carrierAngle;
-            spiderGear1.rotation.z = spiderAngle;
-            spiderGear2.rotation.z = -spiderAngle;
-
             controls.update();
             renderer.render(scene, camera);
         }
 
-        // Handle Resize
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
+        function resize() {
+            const width = stage.clientWidth, height = stage.clientHeight;
+            if (!width || !height) return;
+            camera.aspect = width / height;
+            camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(Math.PI / 8) / Math.min(1, camera.aspect)));
             camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-
+            renderer.setSize(width, height, false);
+        }
+        new ResizeObserver(resize).observe(stage);
+        resize();
+        updateSpeeds();
         animate();
     </script>
 </body>

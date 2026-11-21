@@ -5,34 +5,97 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Three.js Demo Suite</title>
     <style>
-        body { font-family: system-ui, sans-serif; background: #1a1a1a; color: #eee; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
-        h1 { margin-bottom: 10px; }
-        .controls { margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
-        button { padding: 10px 20px; background: #0078d4; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; transition: background 0.2s; }
-        button:hover { background: #005a9e; }
-        button.active { background: #004578; border: 2px solid #4cc2ff; }
-        #container { width: min(800px, 100%); aspect-ratio: 4 / 3; background: #000; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.5); position: relative; }
-        #stats { margin-top: 10px; font-family: monospace; color: #aaa; }
-        #matrix-overlay { position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px; color: #4cc2ff; pointer-events: none; white-space: pre; display: none; }
-        #error { color: #ff6b6b; font-weight: bold; display: none; margin-top: 20px; text-align: center; }
+        :root { color-scheme: dark; }
+        * { box-sizing: border-box; }
+        body { font-family: system-ui, sans-serif; background: #161a22; color: #edf2fa; margin: 0; }
+        main { width: min(73rem, 100%); margin: 0 auto; padding: clamp(.75rem, 3vw, 1.75rem); }
+        h1 { font-size: clamp(1.4rem, 5vw, 2rem); margin: 0 0 .65rem; }
+        .controls, .actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+        .controls { margin-bottom: 1rem; }
+        button, select {
+            min-height: 2.5rem; padding: .45rem .75rem; border: 1px solid #566681; border-radius: 5px;
+            background: #243247; color: inherit; cursor: pointer; font: inherit;
+        }
+        button:hover { background: #324660; }
+        button[aria-pressed=true] { border-color: #7dcdff; background: #153d61; }
+        button:disabled { opacity: .5; cursor: default; }
+        button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid #8fd7ff; outline-offset: 3px; }
+        .workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, 19rem); gap: 1rem; align-items: start; }
+        #container { width: 100%; aspect-ratio: 4 / 3; background: #000; border-radius: 8px; overflow: hidden; position: relative; }
+        #container canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+        #stats { margin: .65rem 0 0; font: .85rem ui-monospace, monospace; color: #c7d2e4; }
+        #matrix-overlay { margin: .75rem 0 0; overflow-x: auto; padding: .65rem; background: #111b2a; border-radius: 5px;
+            font: clamp(.7rem, 2vw, .82rem) ui-monospace, monospace; color: #a6deff; }
+        #settings { min-width: 0; padding: 1rem; border: 1px solid #37475e; border-radius: 8px; background: #1c2533; }
+        #settings h2 { margin: 0 0 .75rem; font-size: 1.1rem; }
+        fieldset { margin: .85rem 0 0; padding: .65rem .75rem .25rem; border: 1px solid #37475e; min-width: 0; }
+        legend { color: #d3dcec; padding: 0 .3rem; }
+        .setting { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin-bottom: .4rem; }
+        .setting output { font: .85rem ui-monospace, monospace; color: #a6deff; white-space: nowrap; }
+        input[type=range] { margin: 0 0 .75rem; width: 100%; accent-color: #72c2fb; }
+        #error { color: #ffb5ad; margin-bottom: .75rem; }
+        @media (max-width: 720px) { .workspace { grid-template-columns: minmax(0, 1fr); gap: .75rem; } }
     </style>
 </head>
 <body>
 
-<h1>Three.js Compute Showcase</h1>
-<div id="error" role="alert"></div>
+<main>
+    <h1>Three.js Compute Showcase</h1>
+    <div id="error" role="alert" hidden></div>
 
-<div class="controls">
-    <button id="btn-matrix" class="active">Matrix Math</button>
-    <button id="btn-particles">Particle Physics</button>
-    <button id="btn-gol">Game of Life</button>
-</div>
+    <nav class="controls" aria-label="Demos">
+        <button id="btn-matrix" data-demo="matrix" aria-pressed="true">Matrix Math</button>
+        <button id="btn-particles" data-demo="particles" aria-pressed="false">Particle Physics</button>
+        <button id="btn-gol" data-demo="gol" aria-pressed="false">Game of Life</button>
+    </nav>
 
-<div id="container">
-    <div id="matrix-overlay"></div>
-</div>
+    <div class="workspace">
+        <section aria-label="Simulation view">
+            <div id="container"></div>
+            <p id="stats">Demo: Matrix Math</p>
+        </section>
 
-<div id="stats">Demo: Matrix Math</div>
+        <aside id="settings" aria-label="Control panel">
+            <h2>Controls</h2>
+            <div class="actions">
+                <button id="pause">Pause</button>
+                <button id="restart">Restart demo</button>
+            </div>
+            <fieldset data-settings="matrix">
+                <legend>Matrix Math</legend>
+                <div class="setting"><label for="rotationRate">Rotation speed</label><output id="rotationRateValue" for="rotationRate">0.5 rad/s</output></div>
+                <input id="rotationRate" type="range" min="-2" max="2" step="0.1" value="0.5">
+                <div class="setting"><label for="matrixScale">Size</label><output id="matrixScaleValue" for="matrixScale">1.0×</output></div>
+                <input id="matrixScale" type="range" min="0.4" max="1.6" step="0.1" value="1">
+                <pre id="matrix-overlay" aria-label="Transformation matrix"></pre>
+            </fieldset>
+            <fieldset data-settings="particles" hidden>
+                <legend>Particle Physics</legend>
+                <div class="setting"><label for="particleCount">Particles</label>
+                    <select id="particleCount">
+                        <option value="5000">5,000</option>
+                        <option value="15000">15,000</option>
+                        <option value="30000" selected>30,000</option>
+                        <option value="50000">50,000</option>
+                    </select>
+                </div>
+                <div class="setting"><label for="gravity">Gravity</label><output id="gravityValue" for="gravity">1.0 units/s²</output></div>
+                <input id="gravity" type="range" min="0" max="5" step="0.1" value="1">
+                <div class="setting"><label for="bounce">Bounciness</label><output id="bounceValue" for="bounce">80%</output></div>
+                <input id="bounce" type="range" min="0" max="1" step="0.05" value="0.8">
+            </fieldset>
+            <fieldset data-settings="gol" hidden>
+                <legend>Game of Life</legend>
+                <div class="setting"><label for="generationRate">Speed</label><output id="generationRateValue" for="generationRate">20 gen/s</output></div>
+                <input id="generationRate" type="range" min="1" max="30" step="1" value="20">
+                <div class="setting"><label for="density">Starting density</label><output id="densityValue" for="density">20%</output></div>
+                <input id="density" type="range" min="0.05" max="0.75" step="0.05" value="0.2" aria-describedby="densityNote">
+                <p id="densityNote">Restart to apply density.</p>
+                <button id="step">Step one generation</button>
+            </fieldset>
+        </aside>
+    </div>
+</main>
 
 <script type="importmap">
 {
@@ -63,12 +126,12 @@ let renderer;
 try {
     renderer = new THREE.WebGLRenderer({ antialias: true });
 } catch {
-    document.getElementById('error').textContent = 'WebGL is unavailable. Enable hardware acceleration or use a browser that supports WebGL.';
-    document.getElementById('error').style.display = 'block';
-    document.querySelectorAll('.controls button').forEach(button => { button.disabled = true; });
+    const error = document.getElementById('error');
+    error.textContent = 'WebGL is unavailable. Enable hardware acceleration or use a browser that supports WebGL.';
+    error.hidden = false;
+    document.querySelectorAll('button, input, select').forEach(control => { control.disabled = true; });
     throw new Error('WebGL initialization failed');
 }
-renderer.setSize(container.clientWidth, container.clientHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 container.prepend(renderer.domElement);
 
@@ -85,12 +148,39 @@ function resize() {
     if (!w || !h) return;
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    renderer.setSize(w, h);
+    renderer.setSize(w, h, false);
+    if (activeName === 'gol') currentDemo.fitCamera();
 }
-window.addEventListener('resize', resize);
+new ResizeObserver(resize).observe(container);
 
 // --- Demo Manager ---
 let currentDemo = null;
+let activeName = 'matrix';
+let paused = false;
+const settings = {};
+const inputs = [
+    ['rotationRate', value => value.toFixed(1) + ' rad/s'],
+    ['matrixScale', value => value.toFixed(1) + '×'],
+    ['particleCount'],
+    ['gravity', value => value.toFixed(1) + ' units/s²'],
+    ['bounce', value => Math.round(value * 100) + '%'],
+    ['generationRate', value => value + ' gen/s'],
+    ['density', value => Math.round(value * 100) + '%'],
+];
+for (const [id, format] of inputs) {
+    const input = document.getElementById(id);
+    const output = document.getElementById(id + 'Value');
+    const sync = () => {
+        settings[id] = Number(input.value);
+        if (output) output.value = format(settings[id]);
+    };
+    sync();
+    input.addEventListener(id === 'particleCount' ? 'change' : 'input', () => {
+        sync();
+        if (id === 'particleCount') loadDemo('particles', false);
+        if (id === 'matrixScale') currentDemo.applyTransform();
+    });
+}
 
 function clearScene() {
     for (const child of [...scene.children]) {
@@ -104,7 +194,6 @@ function clearScene() {
 const MatrixDemo = {
     init() {
         clearScene();
-        overlayEl.style.display = 'block';
         statsEl.textContent = 'Demo: Matrix Math';
 
         // A cube with a transformation matrix
@@ -135,32 +224,27 @@ const MatrixDemo = {
         fillLight.position.set(-2, 1, -2);
         scene.add(fillLight);
 
-        // Store cube and matrix for update
         this.cube = cube;
-        this.matrix = new THREE.Matrix4();
-        this.rotationStep = new THREE.Matrix4();
+        this.angle = 0.3;
+        this.rotation = new THREE.Matrix4();
+        this.tilt = new THREE.Matrix4().makeRotationX(0.1);
+        this.scale = new THREE.Matrix4();
+        this.readoutElapsed = 0;
         cube.matrixAutoUpdate = false;
+        this.applyTransform();
+    },
 
-        // Generate a random transformation matrix (rotation + scale + translation)
-        // We'll make it a composition of rotation and scale for visual interest
-        const rot = new THREE.Matrix4().makeRotationY(0.3);
-        const rotX = new THREE.Matrix4().makeRotationX(0.1);
-        const scale = new THREE.Matrix4().makeScale(0.9, 1.1, 0.95);
-        this.matrix.multiplyMatrices(rot, scale);
-        this.matrix.multiply(rotX);
-        // Apply to cube
-        cube.matrix.copy(this.matrix);
-        cube.matrixWorldNeedsUpdate = true;
-
-        // Display matrix as text
-        this.updateOverlay();
-
-        // Store for animation
-        this.time = 0;
+    applyTransform(refresh = true) {
+        const size = settings.matrixScale;
+        this.rotation.makeRotationY(this.angle);
+        this.scale.makeScale(0.9 * size, 1.1 * size, 0.95 * size);
+        this.cube.matrix.copy(this.rotation).multiply(this.scale).multiply(this.tilt);
+        this.cube.matrixWorldNeedsUpdate = true;
+        if (refresh) this.updateOverlay();
     },
 
     updateOverlay() {
-        const m = this.matrix.elements;
+        const m = this.cube.matrix.elements;
         const text = `Transformation Matrix:\n` +
             `[${m[0].toFixed(2)}, ${m[4].toFixed(2)}, ${m[8].toFixed(2)}, ${m[12].toFixed(2)}]\n` +
             `[${m[1].toFixed(2)}, ${m[5].toFixed(2)}, ${m[9].toFixed(2)}, ${m[13].toFixed(2)}]\n` +
@@ -169,28 +253,26 @@ const MatrixDemo = {
         overlayEl.textContent = text;
     },
 
-    update(time, delta) {
-        this.time += delta;
-        // Slowly rotate the matrix for demonstration
-        this.matrix.multiply(this.rotationStep.makeRotationY(delta * 0.5));
-        // Apply to cube
-        this.cube.matrix.copy(this.matrix);
-        this.cube.matrixWorldNeedsUpdate = true;
-        this.updateOverlay();
+    update(delta) {
+        if (!settings.rotationRate) return;
+        this.angle = (this.angle + delta * settings.rotationRate) % (2 * Math.PI);
+        this.readoutElapsed += delta;
+        const refresh = this.readoutElapsed >= 0.1;
+        if (refresh) this.readoutElapsed %= 0.1;
+        this.applyTransform(refresh);
     },
 
     dispose() {
-        overlayEl.style.display = 'none';
         clearScene();
     }
 };
 
 // --- DEMO 2: Particle Physics ---
 const ParticleDemo = {
-    count: 30000,
     init() {
         clearScene();
-        statsEl.textContent = `Demo: Particle Physics (${this.count} particles)`;
+        this.count = settings.particleCount;
+        statsEl.textContent = `Demo: Particle Physics · ${this.count.toLocaleString()} particles`;
 
         // Geometry
         const positions = new Float32Array(this.count * 3);
@@ -229,16 +311,14 @@ const ParticleDemo = {
         // Store velocities and boundaries
         this.velocities = velocities;
         this.bounds = 2.0;
-        this.gravity = new THREE.Vector3(0, -1.0, 0);
         this.damping = 0.99;
-        this.bounce = 0.8;
 
         // Ambient light for background (not needed for points, but keep)
         const ambient = new THREE.AmbientLight(0x404060);
         scene.add(ambient);
     },
 
-    update(time, delta) {
+    update(delta) {
         const pos = this.points.geometry.attributes.position.array;
         const vel = this.velocities;
         const dt = Math.min(delta, 0.05);
@@ -246,13 +326,13 @@ const ParticleDemo = {
         const damping = this.damping ** (dt * 60);
 
         for (let i = 0; i < pos.length; i++) {
-            if (i % 3 === 1) vel[i] += this.gravity.y * dt;
+            if (i % 3 === 1) vel[i] -= settings.gravity * dt;
             vel[i] *= damping;
             pos[i] += vel[i] * dt;
             if (Math.abs(pos[i]) > bounds) {
                 const wall = Math.sign(pos[i]);
                 pos[i] = wall * bounds;
-                if (wall * vel[i] > 0) vel[i] *= -this.bounce;
+                if (wall * vel[i] > 0) vel[i] *= -settings.bounce;
             }
         }
 
@@ -274,9 +354,9 @@ const GolDemo = {
         const size = this.gridSize;
         // Create a data texture
         const data = new Uint8Array(size * size * 4);
-        // Random initial state (about 20% alive)
+        // Random initial state with the requested probability of a live cell.
         for (let i = 0; i < size * size; i++) {
-            const val = Math.random() > 0.8 ? 255 : 0;
+            const val = Math.random() < settings.density ? 255 : 0;
             data[i*4] = val;
             data[i*4+1] = val;
             data[i*4+2] = val;
@@ -309,51 +389,46 @@ const GolDemo = {
             this.current[i] = data[i*4] > 0 ? 1 : 0;
         }
 
-        // Camera adjustment: zoom to fit
-        camera.position.set(0, 0, 5.6 / Math.min(1, camera.aspect));
-        controls.target.set(0, 0, 0);
-        controls.update();
-
         // Stats
         this.generation = 0;
         this.elapsed = 0;
+        this.previous = Int16Array.from({ length: size }, (_, i) => (i + size - 1) % size);
+        this.following = Int16Array.from({ length: size }, (_, i) => (i + 1) % size);
         this.updateStats();
+    },
+
+    fitCamera() {
+        camera.position.set(0, 0, 5.6 / Math.min(1, camera.aspect));
+        controls.target.set(0, 0, 0);
+        controls.update();
     },
 
     updateStats() {
         statsEl.textContent = `Demo: Game of Life | Grid: ${this.size}x${this.size} | Gen: ${this.generation}`;
     },
 
-    update(time, delta) {
+    update(delta) {
         this.elapsed += delta;
-        const generationInterval = 1 / 20;
-        if (this.elapsed < generationInterval) return;
-        this.elapsed -= generationInterval;
+        const interval = 1 / settings.generationRate;
+        if (this.elapsed < interval) return;
+        while (this.elapsed >= interval) {
+            this.elapsed -= interval;
+            this.step();
+        }
+        this.updateStats();
+    },
 
-        const size = this.size;
-        const current = this.current;
-        const next = this.next;
-        const data = this.data;
-
-        // Compute next generation
+    step() {
+        const { size, current, next, data, previous, following } = this;
         for (let y = 0; y < size; y++) {
+            const above = previous[y] * size, row = y * size, below = following[y] * size;
             for (let x = 0; x < size; x++) {
-                const idx = y * size + x;
-                let neighbors = 0;
-                for (let dy = -1; dy <= 1; dy++) {
-                    for (let dx = -1; dx <= 1; dx++) {
-                        if (dx === 0 && dy === 0) continue;
-                        const nx = (x + dx + size) % size;
-                        const ny = (y + dy + size) % size;
-                        neighbors += current[ny * size + nx];
-                    }
-                }
-                const alive = current[idx];
-                if (alive) {
-                    next[idx] = (neighbors === 2 || neighbors === 3) ? 1 : 0;
-                } else {
-                    next[idx] = (neighbors === 3) ? 1 : 0;
-                }
+                const left = previous[x], right = following[x];
+                const neighbors = current[above + left] + current[above + x] + current[above + right]
+                    + current[row + left] + current[row + right]
+                    + current[below + left] + current[below + x] + current[below + right];
+                const i = row + x;
+                next[i] = neighbors === 3 || (current[i] && neighbors === 2) ? 1 : 0;
             }
         }
 
@@ -370,74 +445,71 @@ const GolDemo = {
         // Swap buffers
         [this.current, this.next] = [this.next, this.current];
         this.generation++;
-        if (this.generation % 10 === 0) this.updateStats();
     },
 
     dispose() {
         this.texture.dispose();
         clearScene();
-        // Reset camera position for next demo
-        camera.position.set(4, 3, 6);
-        controls.target.set(0, 0, 0);
-        controls.update();
     }
 };
 
-// --- Switching Logic ---
-function loadDemo(name) {
-    // Dispose current
-    if (currentDemo && currentDemo.dispose) {
-        currentDemo.dispose();
-    }
+// --- Controls and switching ---
+const demos = { matrix: MatrixDemo, particles: ParticleDemo, gol: GolDemo };
+const demoButtons = [...document.querySelectorAll('[data-demo]')];
+const panels = [...document.querySelectorAll('[data-settings]')];
+const pauseButton = document.getElementById('pause');
 
-    // Update button styles
-    document.querySelectorAll('.controls button').forEach(btn => btn.classList.remove('active'));
-    const btn = document.getElementById(`btn-${name}`);
-    if (btn) btn.classList.add('active');
-
-    // Instantiate demo
-    let demo;
-    switch (name) {
-        case 'matrix':
-            demo = Object.create(MatrixDemo);
-            break;
-        case 'particles':
-            demo = Object.create(ParticleDemo);
-            break;
-        case 'gol':
-            demo = Object.create(GolDemo);
-            break;
-        default:
-            return;
-    }
-    demo.init();
-    currentDemo = demo;
+function setPaused(value) {
+    paused = value;
+    pauseButton.textContent = paused ? 'Resume' : 'Pause';
 }
+
+function loadDemo(name, resetCamera = true) {
+    currentDemo?.dispose();
+    activeName = name;
+    currentDemo = Object.create(demos[name]);
+    currentDemo.init();
+    for (const button of demoButtons) button.setAttribute('aria-pressed', button.dataset.demo === name);
+    for (const panel of panels) panel.hidden = panel.dataset.settings !== name;
+    if (resetCamera) {
+        if (name === 'gol') {
+            currentDemo.fitCamera();
+        } else {
+            camera.position.set(4, 3, 6);
+            controls.target.set(0, 0, 0);
+            controls.update();
+        }
+    }
+}
+
+for (const button of demoButtons) {
+    button.addEventListener('click', () => {
+        if (activeName !== button.dataset.demo) loadDemo(button.dataset.demo);
+    });
+}
+pauseButton.addEventListener('click', () => setPaused(!paused));
+document.getElementById('restart').addEventListener('click', () => loadDemo(activeName));
+document.getElementById('step').addEventListener('click', () => {
+    setPaused(true);
+    currentDemo.elapsed = 0;
+    currentDemo.step();
+    currentDemo.updateStats();
+});
 
 // --- Animation Loop ---
 let lastTime;
 function animate(time) {
     requestAnimationFrame(animate);
-
     const delta = lastTime === undefined ? 0 : Math.min((time - lastTime) / 1000, 0.05);
     lastTime = time;
-
-    if (currentDemo && currentDemo.update) {
-        currentDemo.update(time / 1000, delta);
-    }
-
+    if (!paused && delta) currentDemo.update(delta);
     controls.update();
     renderer.render(scene, camera);
 }
 
 loadDemo('matrix');
+resize();
 requestAnimationFrame(animate);
-
-// Button event listeners (also handle clicks)
-document.getElementById('btn-matrix').addEventListener('click', () => loadDemo('matrix'));
-document.getElementById('btn-particles').addEventListener('click', () => loadDemo('particles'));
-document.getElementById('btn-gol').addEventListener('click', () => loadDemo('gol'));
-
 </script>
 </body>
 </html>
